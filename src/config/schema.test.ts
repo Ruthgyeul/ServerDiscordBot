@@ -8,7 +8,7 @@ import {
   normalizeWebsites,
   checkReferences,
 } from './schema.js';
-import type { ConfigIssue } from '../types.js';
+import type { ConfigIssue } from '../types/index.js';
 
 /**
  * These lists are security allowlists, so the behaviour under test is not
@@ -52,14 +52,44 @@ describe('normalizeServices', () => {
     assert.match(errors[0]?.message ?? '', /Invalid unit/);
   });
 
-  test('rejects names that are not safe command values', () => {
+  test('accepts a capitalised name matching the unit file', () => {
+    // Unit files are routinely capitalised (DefaultWeb.service), and naming
+    // the entry after its unit is the obvious thing to write.
+    const { result, issues } = normalize(normalizeServices, [
+      { name: 'DefaultWeb', unit: 'DefaultWeb.service' },
+      { name: 'ServerMonitor', unit: 'ServerMonitor.service' },
+    ]);
+
+    assert.equal(issues.length, 0);
+    assert.deepEqual(
+      result.map((service) => service.name),
+      ['DefaultWeb', 'ServerMonitor'],
+    );
+  });
+
+  test('rejects names that are not safe option values', () => {
     const { result } = normalize(normalizeServices, [
-      { name: 'BAD NAME', unit: 'a.service' },
-      { name: 'x'.repeat(40), unit: 'b.service' },
-      { unit: 'c.service' },
+      { name: 'BAD NAME', unit: 'a.service' }, // whitespace
+      { name: 'x'.repeat(80), unit: 'b.service' }, // too long
+      { name: '-leading', unit: 'c.service' }, // must start alphanumeric
+      { name: 'has/slash', unit: 'd.service' },
+      { unit: 'e.service' }, // missing entirely
     ]);
 
     assert.equal(result.length, 0);
+  });
+
+  test('treats names differing only by case as duplicates', () => {
+    // Lookups are case-insensitive, so allowing both would make
+    // findService("web") silently pick one of them.
+    const { result, errors } = normalize(normalizeServices, [
+      { name: 'Web', unit: 'first.service' },
+      { name: 'web', unit: 'second.service' },
+    ]);
+
+    assert.equal(result.length, 1);
+    assert.equal(result[0]?.unit, 'first.service');
+    assert.match(errors[0]?.message ?? '', /Duplicate/);
   });
 
   test('keeps the first of two entries sharing a name', () => {
@@ -239,6 +269,27 @@ describe('checkReferences', () => {
 
     assert.equal(issues.length, 1);
     assert.equal(issues[0]?.level, 'warning');
+  });
+
+  test('resolves a service reference regardless of case', () => {
+    const issues: ConfigIssue[] = [];
+    checkReferences(
+      [
+        {
+          name: 'DefaultWeb',
+          label: 'Default web',
+          url: 'https://example.com',
+          expectStatus: 200,
+          timeoutMs: 8000,
+          checkCert: true,
+          service: 'defaultweb',
+        },
+      ],
+      [{ name: 'DefaultWeb', label: 'Default web', unit: 'DefaultWeb.service' }],
+      issues,
+    );
+
+    assert.equal(issues.length, 0);
   });
 
   test('stays quiet when the reference resolves', () => {

@@ -1,14 +1,11 @@
-import type {
-  AutocompleteInteraction,
-  ChatInputCommandInteraction,
-  Client,
-  Collection,
-  SlashCommandBuilder,
-  SlashCommandOptionsOnlyBuilder,
-  SlashCommandSubcommandsOnlyBuilder,
-} from 'discord.js';
-import type { Permission } from './lib/permissions.js';
-import type { AlertScheduler } from './services/alertScheduler.js';
+/**
+ * The configuration model: everything the bot knows about the server it
+ * manages.
+ *
+ * Kept apart from the Discord-facing contracts in `bot.ts` because the two
+ * change for different reasons — this file moves when the inventory gains a
+ * capability, that one when the command or event contract changes.
+ */
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Configuration model
@@ -87,6 +84,8 @@ export interface MonitorThresholds {
   certExpiryDays: number;
   /** Warn when a site responds slower than this (0 disables). */
   responseMs: number;
+  /** Warn above this CPU temperature in °C (0 disables). */
+  cpuTempCelsius: number;
 }
 
 /** Individual monitor passes, each independently switchable. */
@@ -95,6 +94,12 @@ export interface MonitorChecks {
   services: boolean;
   websites: boolean;
   certificates: boolean;
+  /**
+   * Alert on any failed systemd unit, including ones outside the allowlist.
+   * Off by default: valuable on a host you own end to end, noisy on one with
+   * units you neither manage nor care about.
+   */
+  failedUnits: boolean;
 }
 
 export interface MonitorConfig {
@@ -129,6 +134,14 @@ export interface BotConfig {
   embedFooter: string;
   /** Accent color for informational embeds, as a 24-bit integer. */
   accentColor: number;
+  /**
+   * Append a live health summary to the activity text, refreshed periodically.
+   * Turns the member list into an at-a-glance status light — no command needed
+   * to see that something is wrong.
+   */
+  dynamicPresence: boolean;
+  /** How often to refresh the dynamic presence, in seconds. */
+  presenceRefreshSeconds: number;
 }
 
 export interface DiscordConfig {
@@ -138,6 +151,12 @@ export interface DiscordConfig {
   alertChannelId: string;
   /** Optional channel receiving an audit trail of every privileged action. */
   auditChannelId: string;
+  /**
+   * Optional user to DM on failures the bot cannot report any other way.
+   * A crash loop or a broken alert channel is exactly when the normal paths
+   * are unavailable, so this is the last-resort route to a human.
+   */
+  ownerUserId: string;
 }
 
 export interface AccessConfig {
@@ -157,6 +176,8 @@ export interface AppConfig {
   websites: WebsiteConfig[];
   commands: RunCommandConfig[];
   files: FileTargetConfig[];
+  /** Command names to refuse, without removing them from the build. */
+  disabledCommands: string[];
   /** Absolute path of the config file that was actually loaded. */
   configPath: string;
 }
@@ -168,52 +189,4 @@ export interface ConfigIssue {
   message: string;
   /** `error` entries are dropped from the inventory; `warning` are kept. */
   level: 'error' | 'warning';
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Command / event contracts
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/** Any of the slash-command builder shapes a command's `data` may take. */
-export type SlashCommandData =
-  SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder;
-
-/**
- * The context object dependency-injected into every command and event handler,
- * avoiding hidden global state.
- */
-export interface BotContext {
-  client: Client;
-  commands: Collection<string, CommandModule>;
-  alertScheduler: AlertScheduler;
-}
-
-/** Contract every file under src/commands/ must satisfy. */
-export interface CommandModule {
-  data: SlashCommandData;
-  /** Required access level; defaults to admin when omitted. */
-  permission?: Permission;
-  /** Filled in by the loader from the containing folder name. */
-  category?: string;
-  execute(interaction: ChatInputCommandInteraction, context: BotContext): Promise<void> | void;
-  /**
-   * Optional handler for option autocomplete. Implementing this lets a command
-   * offer choices sourced from config at runtime, so inventory changes need no
-   * re-registration of the command.
-   */
-  autocomplete?(
-    interaction: AutocompleteInteraction,
-    context: BotContext,
-  ): Promise<void> | void;
-}
-
-/**
- * Contract every file under src/events/ must satisfy. `execute` receives the
- * event's native arguments followed by the shared context (appended by the
- * loader).
- */
-export interface EventModule {
-  name: string;
-  once?: boolean;
-  execute(...args: unknown[]): Promise<void> | void;
 }

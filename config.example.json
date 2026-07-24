@@ -7,14 +7,16 @@
       "resources": true,
       "services": true,
       "websites": true,
-      "certificates": true
+      "certificates": true,
+      "failedUnits": false
     },
     "thresholds": {
       "cpuPercent": 85,
       "memoryPercent": 90,
       "diskPercent": 90,
       "certExpiryDays": 14,
-      "responseMs": 3000
+      "responseMs": 3000,
+      "cpuTempCelsius": 80
     },
     "ignoreMounts": ["/boot", "/boot/efi", "/snap"],
     "historyHours": 24
@@ -125,5 +127,6 @@
       "path": "/var/log/nginx/access.log",
       "maxLines": 200
     }
-  ]
+  ],
+  "disabledCommands": []
 }

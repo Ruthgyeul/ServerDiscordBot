@@ -1,7 +1,7 @@
-import { run } from '../lib/shell.js';
-import { findCommand } from '../config/index.js';
-import { childLogger } from '../logger.js';
-import type { RunCommandConfig } from '../types.js';
+import { run } from '../../lib/shell.js';
+import { findCommand } from '../../config/index.js';
+import { childLogger } from '../../logger.js';
+import type { RunCommandConfig } from '../../types/index.js';
 
 const log = childLogger('commandRunner');
 

@@ -1,5 +1,6 @@
+import { readFile, stat } from 'node:fs/promises';
 import si from 'systeminformation';
-import { config } from '../config/index.js';
+import { config } from '../../config/index.js';
 
 /**
  * Collects host system metrics via the `systeminformation` library, which
@@ -26,6 +27,11 @@ export interface SystemSnapshot {
   swapTotal: number; // bytes
   uptime: number; // seconds
   disks: DiskUsage[];
+  /**
+   * Main CPU temperature in °C, or null when the host exposes no sensor —
+   * common on VMs and containers, where absence is normal rather than a fault.
+   */
+  cpuTempC: number | null;
 }
 
 export interface HostInfo {
@@ -45,11 +51,12 @@ export interface ProcessInfo {
 
 /** Gather a full snapshot of host metrics in one call. */
 export async function getSnapshot(): Promise<SystemSnapshot> {
-  const [load, mem, time, fsSize] = await Promise.all([
+  const [load, mem, time, fsSize, temp] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     Promise.resolve(si.time()),
     si.fsSize(),
+    si.cpuTemperature().catch(() => null),
   ]);
 
   // `active` reflects memory genuinely in use (excludes reclaimable cache),
@@ -69,6 +76,8 @@ export async function getSnapshot(): Promise<SystemSnapshot> {
     swapTotal: mem.swaptotal,
     uptime: time.uptime,
     disks: selectDisks(fsSize),
+    // systeminformation reports 0 or -1 when it found no usable sensor.
+    cpuTempC: temp && typeof temp.main === 'number' && temp.main > 0 ? temp.main : null,
   };
 }
 
@@ -211,4 +220,47 @@ export async function getListeningPorts(): Promise<ListeningPort[]> {
       return true;
     })
     .sort((a, b) => a.port - b.port);
+}
+
+/** Whether the host is waiting on a reboot, and what asked for one. */
+export interface RebootStatus {
+  required: boolean;
+  /** Packages that requested the reboot, when the distro records them. */
+  packages: string[];
+}
+
+/**
+ * Detect a pending reboot.
+ *
+ * Debian and Ubuntu drop a marker file when a package update needs one — most
+ * often a kernel or libc upgrade, i.e. exactly the pending work that quietly
+ * turns into "the machine has been vulnerable for six weeks". Other distros do
+ * not use this convention, so absence of the file is reported as "not
+ * required" rather than guessed at.
+ */
+export async function getRebootStatus(): Promise<RebootStatus> {
+  const marker = '/var/run/reboot-required';
+
+  try {
+    await stat(marker);
+  } catch {
+    return { required: false, packages: [] };
+  }
+
+  let packages: string[] = [];
+  try {
+    const listed = await readFile(`${marker}.pkgs`, 'utf8');
+    packages = [
+      ...new Set(
+        listed
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+      ),
+    ];
+  } catch {
+    // The marker exists but the package list does not — still a real reboot.
+  }
+
+  return { required: true, packages };
 }

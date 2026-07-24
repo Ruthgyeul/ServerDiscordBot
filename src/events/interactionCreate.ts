@@ -8,8 +8,10 @@ import {
 } from 'discord.js';
 import { childLogger } from '../logger.js';
 import { hasPermission, Permission } from '../lib/permissions.js';
-import { errorEmbed } from '../lib/embeds.js';
-import type { BotContext, EventModule } from '../types.js';
+import { errorEmbed, warningEmbed } from '../lib/embeds.js';
+import { consumeCooldown } from '../lib/cooldown.js';
+import { config } from '../config/index.js';
+import type { BotContext, EventModule } from '../types/index.js';
 
 const log = childLogger('event:interaction');
 
@@ -36,6 +38,21 @@ const event: EventModule = {
       return;
     }
 
+    // Switched off in config: still registered with Discord, but refused here
+    // so a misbehaving command can be disabled without a build and a redeploy.
+    if (config.disabledCommands.includes(interaction.commandName.toLowerCase())) {
+      await interaction.reply({
+        embeds: [
+          warningEmbed(
+            'Command disabled',
+            `\`/${interaction.commandName}\` is switched off in the bot's configuration.`,
+          ),
+        ],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
     // Default to admin-only for anything that did not opt into being public.
     const required = command.permission ?? Permission.ADMIN;
     if (!hasPermission(interaction, required)) {
@@ -52,6 +69,27 @@ const event: EventModule = {
         { command: interaction.commandName, user: interaction.user.tag },
         'permission denied',
       );
+      return;
+    }
+
+    // Rate limit after the permission check, so a denied user cannot consume
+    // someone else's budget — and before execution, so the host is protected.
+    const cooldown = consumeCooldown(
+      interaction.commandName,
+      interaction.user.id,
+      command.cooldownSeconds ?? 0,
+    );
+    if (cooldown.limited) {
+      await interaction.reply({
+        embeds: [
+          warningEmbed(
+            'Slow down',
+            `\`/${interaction.commandName}\` is on cooldown. Try again in ` +
+              `${cooldown.secondsLeft}s — it does real work on the server.`,
+          ),
+        ],
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
 

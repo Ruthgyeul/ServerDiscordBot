@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import type { Client } from 'discord.js';
 import { childLogger } from '../logger.js';
-import type { BotContext, EventModule } from '../types.js';
+import type { BotContext, EventModule } from '../types/index.js';
 
 const log = childLogger('eventLoader');
 const __dirname = dirname(fileURLToPath(import.meta.url));

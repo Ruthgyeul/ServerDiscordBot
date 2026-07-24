@@ -1,32 +1,10 @@
-import { ActivityType, Events, type Client, type PresenceStatusData } from 'discord.js';
+import { Events, type Client } from 'discord.js';
 import { childLogger } from '../logger.js';
 import { config } from '../config/index.js';
 import { infoEmbed } from '../lib/embeds.js';
-import type { BotContext, EventModule } from '../types.js';
+import type { BotContext, EventModule } from '../types/index.js';
 
 const log = childLogger('event:ready');
-
-/**
- * Map the human-friendly BOT_ACTIVITY_TYPE string to discord.js's ActivityType
- * enum, falling back to "Watching" for anything unrecognized.
- */
-function resolveActivityType(value: string): ActivityType {
-  const map: Record<string, ActivityType> = {
-    playing: ActivityType.Playing,
-    watching: ActivityType.Watching,
-    listening: ActivityType.Listening,
-    competing: ActivityType.Competing,
-    custom: ActivityType.Custom,
-  };
-  return map[value.toLowerCase()] ?? ActivityType.Watching;
-}
-
-/** Map BOT_PRESENCE_STATUS to a valid presence status, defaulting to "online". */
-function resolvePresenceStatus(value: string): PresenceStatusData {
-  const allowed: PresenceStatusData[] = ['online', 'idle', 'dnd', 'invisible'];
-  const key = value.toLowerCase() as PresenceStatusData;
-  return allowed.includes(key) ? key : 'online';
-}
 
 /**
  * Fired once when the client has connected and cached its guilds.
@@ -42,16 +20,9 @@ const event: EventModule = {
 
     log.info({ tag: client.user.tag, guilds: client.guilds.cache.size }, 'bot ready');
 
-    // Presence (activity/status) is driven entirely by .env config.
-    client.user.setPresence({
-      status: resolvePresenceStatus(config.bot.presenceStatus),
-      activities: [
-        {
-          name: config.bot.activityText,
-          type: resolveActivityType(config.bot.activityType),
-        },
-      ],
-    });
+    // Presence is driven entirely by .env config, and — when BOT_DYNAMIC_PRESENCE
+    // is on — kept in step with the host's health.
+    context.presence.start();
 
     context.alertScheduler.start();
 

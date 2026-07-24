@@ -6,11 +6,12 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { config } from '../../config/index.js';
-import { listFiles, tailFile } from '../../services/fileViewer.js';
+import { listFiles, tailFile } from '../../services/host/fileViewer.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
-import { formatBytes, truncate } from '../../lib/format.js';
-import type { CommandModule } from '../../types.js';
+import { DiscordLimits, codeBlock, fitEntries } from '../../lib/limits.js';
+import { formatBytes } from '../../lib/format.js';
+import type { CommandModule } from '../../types/index.js';
 
 /**
  * `/file` — read the tail of a file allowlisted in `config.files`.
@@ -20,6 +21,7 @@ import type { CommandModule } from '../../types.js';
  * write path — and the caller names a config key, never a path.
  */
 const command: CommandModule = {
+  cooldownSeconds: 5,
   permission: Permission.ADMIN,
   data: new SlashCommandBuilder()
     .setName('file')
@@ -88,7 +90,12 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
   });
 
   await interaction.editReply({
-    embeds: [infoEmbed(`Allowlisted files (${config.files.length})`, lines.join('\n\n'))],
+    embeds: [
+      infoEmbed(
+        `Allowlisted files (${config.files.length})`,
+        fitEntries(lines, DiscordLimits.embedDescription, '\n\n'),
+      ),
+    ],
   });
 }
 
@@ -111,7 +118,8 @@ async function handleTail(interaction: ChatInputCommandInteraction): Promise<voi
     embeds: [
       infoEmbed(
         `${result.entry.label} — last ${result.lines.length} line(s)`,
-        `\`${result.entry.path}\` · ${notes.join(' · ')}\n\`\`\`\n${truncate(body, 1500)}\n\`\`\``,
+        `\`${result.entry.path}\` · ${notes.join(' · ')}\n` +
+          codeBlock(body, DiscordLimits.embedDescription - 200),
       ),
     ],
   });

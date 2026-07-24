@@ -3,7 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { Collection } from 'discord.js';
 import { childLogger } from '../logger.js';
-import type { CommandModule } from '../types.js';
+import type { CommandModule } from '../types/index.js';
 
 const log = childLogger('commandLoader');
 const __dirname = dirname(fileURLToPath(import.meta.url));

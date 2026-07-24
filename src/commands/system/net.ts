@@ -5,9 +5,10 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import { getNetworkInterfaces, getListeningPorts } from '../../services/systemMonitor.js';
+import { getNetworkInterfaces, getListeningPorts } from '../../services/host/systemMonitor.js';
 import { formatBytes } from '../../lib/format.js';
-import type { CommandModule } from '../../types.js';
+import { DiscordLimits, codeBlock, fitEntries } from '../../lib/limits.js';
+import type { CommandModule } from '../../types/index.js';
 
 /**
  * `/net` — what the host looks like from the network side.
@@ -17,6 +18,7 @@ import type { CommandModule } from '../../types.js';
  * because a listening-port list is a map of the attack surface.
  */
 const command: CommandModule = {
+  cooldownSeconds: 10,
   permission: Permission.ADMIN,
   data: new SlashCommandBuilder()
     .setName('net')
@@ -99,7 +101,7 @@ async function handlePorts(interaction: ChatInputCommandInteraction): Promise<vo
     embeds: [
       infoEmbed(
         `Listening sockets (${ports.length})`,
-        `\`\`\`\n${header}\n${rows.join('\n').slice(0, 3500)}\n\`\`\``,
+        codeBlock(`${header}\n${fitEntries(rows, DiscordLimits.embedDescription - 200)}`),
       ),
     ],
   });

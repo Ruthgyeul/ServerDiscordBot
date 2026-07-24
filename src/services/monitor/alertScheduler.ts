@@ -1,14 +1,25 @@
 import type { Client, EmbedBuilder, SendableChannels } from 'discord.js';
-import { config } from '../config/index.js';
-import { childLogger } from '../logger.js';
-import { getSnapshot } from './systemMonitor.js';
-import { getAllStatuses } from './serviceManager.js';
-import { checkAllSites } from './webMonitor.js';
-import { warningEmbed, successEmbed } from '../lib/embeds.js';
+import { config } from '../../config/index.js';
+import { childLogger } from '../../logger.js';
+import { getSnapshot } from '../host/systemMonitor.js';
+import { getAllStatuses, getFailedUnits } from '../host/serviceManager.js';
+import { checkAllSites } from '../web/webMonitor.js';
+import { warningEmbed, successEmbed } from '../../lib/embeds.js';
 import { metricsHistory } from './metricsHistory.js';
-import { formatPercent } from '../lib/format.js';
+import { formatPercent } from '../../lib/format.js';
 
 const log = childLogger('alertScheduler');
+
+/** How many transitions to remember for `/alerts history`. */
+const MAX_EVENTS = 100;
+
+/** A state change the monitor observed, kept for `/alerts history`. */
+export interface AlertEvent {
+  at: number;
+  key: string;
+  title: string;
+  kind: 'fired' | 'recovered';
+}
 
 /** One condition currently considered unhealthy. */
 export interface ActiveAlert {
@@ -39,6 +50,11 @@ export interface ActiveAlert {
 export class AlertScheduler {
   private readonly client: Client;
   private readonly activeAlerts = new Map<string, ActiveAlert>();
+  /**
+   * Recent transitions, newest last. Bounded because this is a debugging aid,
+   * not a record of truth — the channel and the journal are that.
+   */
+  private readonly events: AlertEvent[] = [];
   private timer: NodeJS.Timeout | null = null;
   /** Epoch ms until which alerts are suppressed; null when not muted. */
   private mutedUntil: number | null = null;
@@ -85,14 +101,36 @@ export class AlertScheduler {
     return this.timer !== null;
   }
 
-  /** Run one full evaluation pass, honouring the per-check toggles. */
+  /**
+   * Run one full evaluation pass, honouring the per-check toggles.
+   *
+   * The checks are independent and are settled independently: `Promise.all`
+   * would let one failure — a missing `systemctl`, a transient permission
+   * error — discard the results of every other check in the same tick, so a
+   * single broken probe would silently switch off website monitoring too. Each
+   * failure is logged against its own check and the rest still report.
+   */
   async tick(): Promise<void> {
     const { checks } = config.monitor;
-    await Promise.all([
-      checks.resources ? this.checkResources() : Promise.resolve(),
-      checks.services ? this.checkServices() : Promise.resolve(),
-      checks.websites || checks.certificates ? this.checkWebsites() : Promise.resolve(),
-    ]);
+
+    const passes: [string, boolean, () => Promise<void>][] = [
+      ['resources', checks.resources, () => this.checkResources()],
+      ['services', checks.services, () => this.checkServices()],
+      ['websites', checks.websites || checks.certificates, () => this.checkWebsites()],
+      ['failedUnits', checks.failedUnits, () => this.checkFailedUnits()],
+    ];
+
+    const enabled = passes.filter(([, on]) => on);
+    const results = await Promise.allSettled(enabled.map(([, , runPass]) => runPass()));
+
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        log.error(
+          { check: enabled[index]?.[0], err: errorMessage(result.reason) },
+          'monitor check failed',
+        );
+      }
+    });
   }
 
   /* ── Alert state, inspectable from /alerts ─────────────────────────────── */
@@ -100,6 +138,16 @@ export class AlertScheduler {
   /** Every condition currently unhealthy, newest problem first. */
   getActiveAlerts(): ActiveAlert[] {
     return [...this.activeAlerts.values()].sort((a, b) => b.since - a.since);
+  }
+
+  /**
+   * Recent fired/recovered transitions, newest first.
+   *
+   * Answers the question `/alerts state` cannot: something broke and fixed
+   * itself while nobody was looking — how often, and how long did it last?
+   */
+  getRecentEvents(limit = 15): AlertEvent[] {
+    return [...this.events].reverse().slice(0, limit);
   }
 
   /** Suppress outgoing alerts for a while (maintenance windows, noisy deploys). */
@@ -145,6 +193,15 @@ export class AlertScheduler {
       `Memory usage is ${formatPercent(snap.memPercent)} (threshold ${t.memoryPercent}%).`,
     );
 
+    if (snap.cpuTempC !== null && t.cpuTempCelsius > 0) {
+      this.evaluate(
+        'cpu-temp',
+        snap.cpuTempC >= t.cpuTempCelsius,
+        'High CPU temperature',
+        `CPU is at ${snap.cpuTempC.toFixed(1)} °C (threshold ${t.cpuTempCelsius} °C).`,
+      );
+    }
+
     for (const disk of snap.disks) {
       this.evaluate(
         `disk:${disk.mount}`,
@@ -166,6 +223,26 @@ export class AlertScheduler {
         `\`${status.service.unit}\` is **${status.activeState}** (${status.subState}).`,
       );
     }
+  }
+
+  /**
+   * Watch for failed units the allowlist does not cover.
+   *
+   * Opt-in (`checks.failedUnits`), because on a busy host this can fire for
+   * units the operator neither owns nor cares about. When it is on, a single
+   * alert names them all rather than one alert per unit — the useful signal is
+   * "something on this box is failing", not a per-unit stream.
+   */
+  private async checkFailedUnits(): Promise<void> {
+    const failed = await getFailedUnits();
+    const names = failed.map((unit) => unit.unit).sort();
+
+    this.evaluate(
+      'failed-units',
+      names.length > 0,
+      `${names.length} failed systemd unit(s)`,
+      names.map((name) => `\`${name}\``).join(', '),
+    );
   }
 
   /**
@@ -239,6 +316,7 @@ export class AlertScheduler {
     if (isBad) {
       if (!existing) {
         this.activeAlerts.set(key, { key, title, detail, since: now, lastNotified: now });
+        this.record({ at: now, key, title, kind: 'fired' });
         this.send(warningEmbed(title, detail));
         return;
       }
@@ -252,8 +330,15 @@ export class AlertScheduler {
     } else if (existing) {
       // Transitioned back to healthy — clear state and announce recovery.
       this.activeAlerts.delete(key);
+      this.record({ at: now, key, title, kind: 'recovered' });
       this.send(successEmbed(`Recovered: ${title}`, detail));
     }
+  }
+
+  /** Append a transition, dropping the oldest once the buffer is full. */
+  private record(event: AlertEvent): void {
+    this.events.push(event);
+    if (this.events.length > MAX_EVENTS) this.events.shift();
   }
 
   /** Post an embed to the alert channel, tolerating a missing/invalid channel. */

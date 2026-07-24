@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import type { ConfigIssue } from '../types.js';
+import type { ConfigIssue } from '../types/index.js';
 
 /**
  * Typed, forgiving readers for environment variables.

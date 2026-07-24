@@ -5,17 +5,19 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { config, findWebsite } from '../../config/index.js';
-import { checkAllSites, checkSite, type WebResult } from '../../services/webMonitor.js';
+import { checkAllSites, checkSite, type WebResult } from '../../services/web/webMonitor.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
-import { metricsHistory } from '../../services/metricsHistory.js';
-import type { CommandModule, WebsiteConfig } from '../../types.js';
+import { DiscordLimits, fitEntries } from '../../lib/limits.js';
+import { metricsHistory } from '../../services/monitor/metricsHistory.js';
+import type { CommandModule, WebsiteConfig } from '../../types/index.js';
 
 /**
  * `/sites` — check the HTTP health of the websites hosted on this server.
  * Read-only; available to everyone by default.
  */
 const command: CommandModule = {
+  cooldownSeconds: 10,
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('sites')
@@ -43,7 +45,7 @@ const command: CommandModule = {
     const allUp = results.every((r) => r.up);
     const embed = infoEmbed(
       allUp ? '🟢 All sites healthy' : '🔴 Some sites are down',
-      results.map(describeSite).join('\n\n'),
+      fitEntries(results.map(describeSite), DiscordLimits.embedDescription, '\n\n'),
     );
 
     await interaction.editReply({ embeds: [embed] });

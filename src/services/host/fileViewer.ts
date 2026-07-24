@@ -1,7 +1,7 @@
 import { open, stat } from 'node:fs/promises';
-import { findFile, config } from '../config/index.js';
-import { childLogger } from '../logger.js';
-import type { FileTargetConfig } from '../types.js';
+import { findFile, config } from '../../config/index.js';
+import { childLogger } from '../../logger.js';
+import type { FileTargetConfig } from '../../types/index.js';
 
 const log = childLogger('fileViewer');
 

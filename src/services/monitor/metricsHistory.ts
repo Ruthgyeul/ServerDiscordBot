@@ -1,6 +1,6 @@
-import { config } from '../config/index.js';
-import type { SystemSnapshot } from './systemMonitor.js';
-import type { WebResult } from './webMonitor.js';
+import { config } from '../../config/index.js';
+import type { SystemSnapshot } from '../host/systemMonitor.js';
+import type { WebResult } from '../web/webMonitor.js';
 
 /**
  * In-memory time series of everything the monitor already measures.

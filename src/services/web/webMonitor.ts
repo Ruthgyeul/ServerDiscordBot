@@ -1,6 +1,6 @@
-import { config } from '../config/index.js';
+import { config } from '../../config/index.js';
 import { checkCertificate, type CertInfo } from './certMonitor.js';
-import type { WebsiteConfig } from '../types.js';
+import type { WebsiteConfig } from '../../types/index.js';
 
 /**
  * Lightweight HTTP health checker for the websites hosted on this server.

@@ -7,12 +7,15 @@ other apps), and the **websites** it serves — all from Discord. Written in
 
 ## What it does
 
-- **📊 Host monitoring** — CPU, memory, swap, disk usage and uptime at a glance
-  (`/status`, with trends against the last hour), the heaviest processes
-  (`/top`), and interfaces / listening ports (`/net`).
-- **⚙️ Service control** — start / stop / restart / inspect the systemd units
-  you register, plus tail their journal logs (`/service …`). Only units on your
-  configured allowlist can ever be touched.
+- **📊 Host monitoring** — CPU, memory, swap, disk usage, uptime and pending
+  reboots at a glance (`/status`, with trends against the last hour), the
+  heaviest processes (`/top`), and interfaces / listening ports (`/net`).
+- **⚙️ Service control** — start / stop / restart / enable / disable / inspect
+  the systemd units you register, plus tail their journal logs and list every
+  failed unit on the host (`/service …`). Only units on your configured
+  allowlist can be _controlled_; the failed-unit view is read-only and covers
+  the whole machine, so breakage in something you forgot to register still
+  shows up.
 - **🌐 Website health checks** — HTTP status, latency, uptime percentage and
   **TLS certificate expiry** for the sites you host (`/sites`).
 - **▶️ Allowlisted commands** — expose the shell commands you keep SSHing in to
@@ -23,7 +26,11 @@ other apps), and the **websites** it serves — all from Discord. Written in
   service state, website availability and certificate expiry, and posts to an
   alert channel when something breaks (and again when it recovers), with
   cooldowns to avoid spam. Inspect, test and mute it with `/alerts`.
-- **♻️ Hot reload** — `/config reload` re-reads `.env` and `config.json` live.
+- **♻️ Hot reload** — `/config reload` re-reads `.env` and `config.json` live,
+  and `disabledCommands` switches a command off without a redeploy.
+- **🟢 Health at a glance** — with `BOT_DYNAMIC_PRESENCE`, the bot's activity
+  text carries a live health summary, so a problem is visible in the member
+  list without anyone running a command.
 - **🛡️ Guardrails** — stopping a service marked `critical`, or running a command
   marked `confirm`, requires a button confirmation. Every privileged action is
   written to the journal and, optionally, mirrored to an audit channel.
@@ -55,8 +62,11 @@ src/
 ├── index.ts                 # entry point: boot, login, signal handling
 ├── client.ts                # builds the Discord client + shared context
 ├── logger.ts                # pino logger (pretty in dev, JSON in prod)
-├── types.ts                 # every shared interface: config + command/event contracts
 ├── deploy-commands.ts       # registers slash commands with Discord
+├── types/
+│   ├── config.ts            # the configuration model
+│   ├── bot.ts               # command / event / context contracts
+│   └── index.ts             # single import surface for both
 ├── config/
 │   ├── index.ts             # assembles + hot-reloads the live config, lookups
 │   ├── env.ts               # typed, forgiving .env readers
@@ -73,16 +83,22 @@ src/
 │   ├── ops/                 # run, file
 │   └── admin/               # config, alerts
 ├── services/                # domain logic (no Discord types leak in here)
-│   ├── systemMonitor.ts     # host metrics via systeminformation
-│   ├── serviceManager.ts    # systemctl / journalctl wrapper + allowlist
-│   ├── webMonitor.ts        # HTTP health checks
-│   ├── metricsHistory.ts    # in-memory samples -> trends and uptime
+│   ├── host/                # everything that touches the local machine
+│   │   ├── systemMonitor.ts     # metrics, processes, network, reboot state
+│   │   ├── serviceManager.ts    # systemctl / journalctl wrapper + allowlist
+│   │   ├── commandRunner.ts     # allowlisted command execution
+│   │   └── fileViewer.ts        # allowlisted, bounded file tailing
+│   ├── web/                 # everything that makes outbound requests
+│   │   ├── webMonitor.ts        # HTTP health checks
+│   │   └── certMonitor.ts       # TLS certificate expiry
+│   ├── monitor/             # the periodic loop and what it remembers
+│   │   ├── alertScheduler.ts    # monitor pass + alert state machine
+│   │   ├── metricsHistory.ts    # in-memory samples -> trends and uptime
+│   │   └── presence.ts          # static or health-reflecting presence
 │   ├── audit.ts             # audit trail for privileged actions
-│   ├── certMonitor.ts       # TLS certificate expiry
-│   ├── commandRunner.ts     # allowlisted command execution
-│   ├── fileViewer.ts        # allowlisted, bounded file tailing
-│   └── alertScheduler.ts    # periodic monitor + alert state machine
-└── lib/                     # shell, permissions, embeds, autocomplete, confirm, formatting
+│   └── notify.ts            # last-resort owner DM when all else fails
+└── lib/                     # shell, permissions, embeds, autocomplete,
+                             # confirm, limits, formatting
 dist/                        # compiled JS output (tsc), git-ignored
 config.example.json          # the inventory template — copy to config.json
 ```
@@ -95,29 +111,32 @@ same drop-in extension model works in either mode.
 
 ## Commands
 
-| Command                                | Access   | Description                                 |
-| -------------------------------------- | -------- | ------------------------------------------- |
-| `/ping`                                | everyone | Liveness + latency                          |
-| `/status`                              | everyone | Host CPU / memory / swap / disk / uptime    |
-| `/sites [name]`                        | everyone | Website health + TLS expiry                 |
-| `/help`                                | everyone | List commands                               |
-| `/top [sort] [count]`                  | admin    | Heaviest processes by CPU or memory         |
-| `/net interfaces\|ports`               | admin    | Interfaces + throughput, or listening ports |
-| `/service list`                        | admin    | All managed services + state                |
-| `/service status <name>`               | admin    | Detailed status for one service             |
-| `/service start\|stop\|restart <name>` | admin    | Control a service                           |
-| `/service logs <name> [lines] [prio]`  | admin    | Recent journal logs                         |
-| `/run list`                            | admin    | Show allowlisted commands                   |
-| `/run exec <name> [args]`              | admin    | Run an allowlisted command                  |
-| `/file list`                           | admin    | Show allowlisted files                      |
-| `/file tail <name> [lines] [contains]` | admin    | Tail an allowlisted file                    |
-| `/alerts state`                        | admin    | Monitor state + currently active alerts     |
-| `/alerts check`                        | admin    | Run a monitoring pass immediately           |
-| `/alerts test`                         | admin    | Verify the alert channel works              |
-| `/alerts mute <minutes>` / `unmute`    | admin    | Suppress alerts during maintenance          |
-| `/config show`                         | admin    | Effective configuration (secrets hidden)    |
-| `/config reload`                       | admin    | Re-read `.env` + `config.json` live         |
-| `/config issues`                       | admin    | Problems found in the current config        |
+| Command                                | Access   | Description                                   |
+| -------------------------------------- | -------- | --------------------------------------------- |
+| `/ping`                                | everyone | Liveness + latency                            |
+| `/status`                              | everyone | Host CPU / memory / swap / disk / uptime      |
+| `/sites [name]`                        | everyone | Website health + TLS expiry                   |
+| `/help`                                | everyone | List commands                                 |
+| `/top [sort] [count]`                  | admin    | Heaviest processes by CPU or memory           |
+| `/net interfaces\|ports`               | admin    | Interfaces + throughput, or listening ports   |
+| `/service list`                        | admin    | All managed services + state                  |
+| `/service status <name>`               | admin    | Detailed status for one service               |
+| `/service start\|stop\|restart <name>` | admin    | Control a service                             |
+| `/service enable\|disable <name>`      | admin    | Control whether it starts at boot             |
+| `/service failed`                      | admin    | Every failed unit on the host, managed or not |
+| `/service logs <name> [lines] [prio]`  | admin    | Recent journal logs                           |
+| `/run list`                            | admin    | Show allowlisted commands                     |
+| `/run exec <name> [args]`              | admin    | Run an allowlisted command                    |
+| `/file list`                           | admin    | Show allowlisted files                        |
+| `/file tail <name> [lines] [contains]` | admin    | Tail an allowlisted file                      |
+| `/alerts state`                        | admin    | Monitor state + currently active alerts       |
+| `/alerts check`                        | admin    | Run a monitoring pass immediately             |
+| `/alerts history [count]`              | admin    | Recent alerts that fired or recovered         |
+| `/alerts test`                         | admin    | Verify the alert channel works                |
+| `/alerts mute <minutes>` / `unmute`    | admin    | Suppress alerts during maintenance            |
+| `/config show`                         | admin    | Effective configuration (secrets hidden)      |
+| `/config reload`                       | admin    | Re-read `.env` + `config.json` live           |
+| `/config issues`                       | admin    | Problems found in the current config          |
 
 Access is enforced in `src/lib/permissions.ts`: a user is an admin if their ID
 is in `ADMIN_USER_IDS` or they hold a role in `ADMIN_ROLE_IDS`. Commands default
@@ -139,28 +158,31 @@ at once in the logs and via `/config issues`.
 
 ### `.env`
 
-| Variable              | Required | Purpose                                               |
-| --------------------- | -------- | ----------------------------------------------------- |
-| `DISCORD_TOKEN`       | ✅       | Bot token _(restart to change)_                       |
-| `DISCORD_CLIENT_ID`   | ✅       | Application ID (command registration)                 |
-| `DISCORD_GUILD_ID`    |          | Register commands to one guild (instant)              |
-| `ALERT_CHANNEL_ID`    |          | Channel for alerts + startup/shutdown notices         |
-| `AUDIT_CHANNEL_ID`    |          | Channel mirroring the privileged-action audit trail   |
-| `ADMIN_USER_IDS`      |          | Comma-separated admin user IDs                        |
-| `ADMIN_ROLE_IDS`      |          | Comma-separated admin role IDs                        |
-| `BOT_NAME`            |          | Display name in embeds / User-Agent                   |
-| `BOT_DESCRIPTION`     |          | One-line description shown in `/help`                 |
-| `BOT_PRESENCE_STATUS` |          | `online` \| `idle` \| `dnd` \| `invisible`            |
-| `BOT_ACTIVITY_TYPE`   |          | `Playing`/`Watching`/`Listening`/`Competing`/`Custom` |
-| `BOT_ACTIVITY_TEXT`   |          | Text after the activity verb                          |
-| `BOT_ACCENT_COLOR`    |          | Hex accent for info embeds (e.g. `#5865F2`)           |
-| `BOT_EMBED_FOOTER`    |          | Optional footer added to every embed                  |
-| `SYSTEMCTL_SUDO`      |          | `true` to prefix systemctl with `sudo -n`             |
-| `SYSTEMCTL_SCOPE`     |          | `system` (default) or `user` units                    |
-| `COMMAND_TIMEOUT_MS`  |          | Default host-command timeout (default 15000)          |
-| `CONFIG_PATH`         |          | Override the inventory file location                  |
-| `LOG_LEVEL`           |          | `trace`..`fatal` (default `info`) _(restart)_         |
-| `NODE_ENV`            |          | `production` for JSON logs _(restart)_                |
+| Variable                       | Required | Purpose                                               |
+| ------------------------------ | -------- | ----------------------------------------------------- |
+| `DISCORD_TOKEN`                | ✅       | Bot token _(restart to change)_                       |
+| `DISCORD_CLIENT_ID`            | ✅       | Application ID (command registration)                 |
+| `DISCORD_GUILD_ID`             |          | Register commands to one guild (instant)              |
+| `ALERT_CHANNEL_ID`             |          | Channel for alerts + startup/shutdown notices         |
+| `AUDIT_CHANNEL_ID`             |          | Channel mirroring the privileged-action audit trail   |
+| `OWNER_USER_ID`                |          | User DMed on failures the bot cannot otherwise report |
+| `ADMIN_USER_IDS`               |          | Comma-separated admin user IDs                        |
+| `ADMIN_ROLE_IDS`               |          | Comma-separated admin role IDs                        |
+| `BOT_NAME`                     |          | Display name in embeds / User-Agent                   |
+| `BOT_DESCRIPTION`              |          | One-line description shown in `/help`                 |
+| `BOT_PRESENCE_STATUS`          |          | `online` \| `idle` \| `dnd` \| `invisible`            |
+| `BOT_ACTIVITY_TYPE`            |          | `Playing`/`Watching`/`Listening`/`Competing`/`Custom` |
+| `BOT_ACTIVITY_TEXT`            |          | Text after the activity verb                          |
+| `BOT_ACCENT_COLOR`             |          | Hex accent for info embeds (e.g. `#5865F2`)           |
+| `BOT_EMBED_FOOTER`             |          | Optional footer added to every embed                  |
+| `BOT_DYNAMIC_PRESENCE`         |          | Put a live health summary in the activity text        |
+| `BOT_PRESENCE_REFRESH_SECONDS` |          | How often to refresh it (default 60)                  |
+| `SYSTEMCTL_SUDO`               |          | `true` to prefix systemctl with `sudo -n`             |
+| `SYSTEMCTL_SCOPE`              |          | `system` (default) or `user` units                    |
+| `COMMAND_TIMEOUT_MS`           |          | Default host-command timeout (default 15000)          |
+| `CONFIG_PATH`                  |          | Override the inventory file location                  |
+| `LOG_LEVEL`                    |          | `trace`..`fatal` (default `info`) _(restart)_         |
+| `NODE_ENV`                     |          | `production` for JSON logs _(restart)_                |
 
 The bot's Discord account username and avatar are set in the Developer Portal,
 not at runtime — everything else about how it presents itself is above.
@@ -237,10 +259,15 @@ not at runtime — everything else about how it presents itself is above.
 }
 ```
 
-Every `name` is the key used in commands and autocomplete: lowercase letters,
-digits, `.`, `-`, `_`, up to 32 characters, unique within its section. Only
-`name` plus the section's own required field (`unit`, `url`, `command`, `path`)
-are mandatory — everything else has a default.
+Every `name` is the key used in commands and autocomplete: letters, digits,
+`.`, `-`, `_`, up to 64 characters, starting with a letter or digit. Case is
+preserved for display but **matched case-insensitively**, so `DefaultWeb` and
+`defaultweb` both resolve to the same entry — and two entries differing only by
+case are rejected as duplicates. Naming an entry after its unit file
+(`"name": "DefaultWeb"`, `"unit": "DefaultWeb.service"`) is fine.
+
+Only `name` plus the section's own required field (`unit`, `url`, `command`,
+`path`) are mandatory — everything else has a default.
 
 **These lists are the security boundary.** The bot never runs `systemctl`
 against a unit, executes a binary, or reads a path that is not listed here, and
@@ -409,6 +436,15 @@ Tests live next to their subject as `*.test.ts` and are excluded from the
 build. The suite covers the config validators and argument parsing — the code
 where a mistake widens an allowlist — rather than chasing coverage of the
 Discord plumbing, which is better verified by running the bot.
+
+## Rate limiting
+
+Commands that touch the host declare a per-user cooldown (`cooldownSeconds` on
+the command module): `/status` 5s, `/top`, `/net` and `/sites` 10s. These walk
+the process table, sweep every site, or shell out per unit, and an impatient
+double-click should not become two probes of a machine that is already
+struggling. It protects the host from accidents — it is not a security control,
+and admins remain admins.
 
 ## Notes on monitoring history
 

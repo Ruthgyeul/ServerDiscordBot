@@ -56,7 +56,10 @@ describe('diffCommandNames', () => {
 
 describe('describeDiff', () => {
   test('says so explicitly when nothing moved', () => {
-    assert.equal(describeDiff({ added: [], removed: [], unchanged: ['ping'] }), ' · no changes');
+    assert.equal(
+      describeDiff({ added: [], removed: [], unchanged: ['ping'] }),
+      ' · no changes',
+    );
   });
 
   test('lists both directions when both happened', () => {

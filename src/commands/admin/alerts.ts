@@ -7,9 +7,9 @@ import { Permission } from '../../lib/permissions.js';
 import { config } from '../../config/index.js';
 import { infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
 import { formatDuration } from '../../lib/format.js';
+import { DiscordLimits, fitEntries } from '../../lib/limits.js';
 import { childLogger } from '../../logger.js';
-import { recordAudit } from '../../services/audit.js';
-import type { BotContext, CommandModule } from '../../types.js';
+import type { BotContext, CommandModule } from '../../types/index.js';
 
 const log = childLogger('command:alerts');
 
@@ -30,6 +30,18 @@ const command: CommandModule = {
     )
     .addSubcommand((sub) =>
       sub.setName('check').setDescription('Run a monitoring pass right now.'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('history')
+        .setDescription('Recent alerts that fired or recovered.')
+        .addIntegerOption((opt) =>
+          opt
+            .setName('count')
+            .setDescription('How many events to show (1–25, default 15).')
+            .setMinValue(1)
+            .setMaxValue(25),
+        ),
     )
     .addSubcommand((sub) =>
       sub
@@ -106,7 +118,7 @@ const command: CommandModule = {
         const minutes = interaction.options.getInteger('minutes', true);
         const until = scheduler.mute(minutes);
         log.info({ user: interaction.user.tag, minutes }, 'alerts muted');
-        recordAudit(context.client, {
+        context.audit({
           actor: interaction.user.tag,
           action: 'alerts.mute',
           target: `${minutes} minutes`,
@@ -126,7 +138,7 @@ const command: CommandModule = {
 
       case 'unmute': {
         scheduler.unmute();
-        recordAudit(context.client, {
+        context.audit({
           actor: interaction.user.tag,
           action: 'alerts.unmute',
           target: 'monitor',
@@ -137,6 +149,9 @@ const command: CommandModule = {
         });
         return;
       }
+
+      case 'history':
+        return handleHistory(interaction, context);
 
       default:
         return handleState(interaction, context);
@@ -174,16 +189,60 @@ async function handleState(
   if (active.length > 0) {
     embed.addFields({
       name: 'Active',
-      value: active
-        .map(
+      value: fitEntries(
+        active.map(
           (alert) =>
             `🔴 **${alert.title}** — for ${formatDuration((Date.now() - alert.since) / 1000)}\n${alert.detail}`,
-        )
-        .join('\n\n')
-        .slice(0, 1024),
+        ),
+        DiscordLimits.embedFieldValue,
+        '\n\n',
+      ),
       inline: false,
     });
   }
 
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
+/**
+ * Show recent transitions. This is the view that catches the problem nobody
+ * saw: a site that fails and recovers every few hours looks perfectly healthy
+ * in `/alerts state` at any single moment.
+ */
+async function handleHistory(
+  interaction: ChatInputCommandInteraction,
+  context: BotContext,
+): Promise<void> {
+  const count = interaction.options.getInteger('count') ?? 15;
+  const events = context.alertScheduler.getRecentEvents(count);
+
+  if (events.length === 0) {
+    await interaction.reply({
+      embeds: [
+        infoEmbed(
+          'No alert history yet',
+          'Nothing has fired or recovered since the bot started. History is ' +
+            'kept in memory, so a restart clears it.',
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const lines = events.map((event) => {
+    const icon = event.kind === 'fired' ? '🔴' : '🟢';
+    const when = `<t:${Math.floor(event.at / 1000)}:R>`;
+    return `${icon} **${event.title}** — ${event.kind} ${when}`;
+  });
+
+  await interaction.reply({
+    embeds: [
+      infoEmbed(
+        `Recent alert activity (${events.length})`,
+        fitEntries(lines, DiscordLimits.embedDescription),
+      ),
+    ],
+    flags: MessageFlags.Ephemeral,
+  });
 }

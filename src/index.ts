@@ -3,6 +3,7 @@ import { assertBootConfig, config, configIssues } from './config/index.js';
 import { logger } from './logger.js';
 import { createClient } from './client.js';
 import { warningEmbed } from './lib/embeds.js';
+import { notifyOwner } from './services/notify.js';
 
 /**
  * Application entry point.
@@ -75,11 +76,21 @@ function installProcessHandlers(client: Client): void {
 
   process.on('unhandledRejection', (reason) => {
     logger.error({ reason: String(reason) }, 'unhandled promise rejection');
+    void notifyOwner(client, `Unhandled promise rejection:\n${String(reason)}`, 'warn');
   });
+
   process.on('uncaughtException', (error: Error) => {
     logger.fatal({ err: error.message, stack: error.stack }, 'uncaught exception');
-    void client.destroy();
-    process.exit(1);
+    // The DM is the only channel guaranteed not to depend on the state we
+    // just lost, so it is worth a bounded wait before exiting.
+    void withTimeout(
+      notifyOwner(client, `Uncaught exception — shutting down:\n${error.stack ?? error.message}`)
+        .then(() => undefined),
+      2000,
+    ).finally(() => {
+      void client.destroy();
+      process.exit(1);
+    });
   });
 }
 
