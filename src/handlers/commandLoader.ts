@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { Collection } from 'discord.js';
+import { Collection, InteractionContextType } from 'discord.js';
 import { childLogger } from '../logger.js';
 import type { CommandModule } from '../types/index.js';
 
@@ -54,6 +54,16 @@ export async function loadCommands(): Promise<Collection<string, CommandModule>>
 
     // Derive category from the immediate parent folder name.
     command.category = dirname(file).split('/').pop();
+
+    // Guild-only, applied centrally so no command can forget it.
+    //
+    // Permission.EVERYONE commands (/status, /sites, /ping, /help) report the
+    // hostname, distro, kernel, disk layout and the URLs of every hosted site.
+    // In a DM there is no member to check, so the admin gate is not even
+    // reached — and a globally-registered command is usable in DMs by anyone
+    // who shares a guild with the bot. Registering to a guild happens to
+    // prevent that today; this makes it true regardless of how it is deployed.
+    command.data.setContexts(InteractionContextType.Guild);
 
     commands.set(command.data.name, command);
     log.debug({ command: command.data.name, category: command.category }, 'loaded command');

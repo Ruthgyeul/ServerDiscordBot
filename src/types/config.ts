@@ -60,6 +60,16 @@ export interface RunCommandConfig extends NamedEntry {
   args: string[];
   /** Allow the caller to append extra arguments (off by default). */
   allowArgs: boolean;
+  /**
+   * Anchored regular expression every caller-supplied argument must match.
+   *
+   * The built-in character check prevents shell injection, but not *argument*
+   * injection: `allowArgs` on a command that reads files lets a caller name
+   * any path the bot can read, sidestepping the `files` allowlist. Constrain
+   * the shape of what a command will accept — e.g. `^[0-9]{1,4}$` for a line
+   * count. Empty means the character check alone.
+   */
+  argPattern: string;
   timeoutMs: number;
   /** Run through `sudo -n` (needs a matching sudoers rule). */
   sudo: boolean;

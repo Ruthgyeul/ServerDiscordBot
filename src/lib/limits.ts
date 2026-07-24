@@ -1,3 +1,5 @@
+import { escapeCodeBlock } from 'discord.js';
+
 /**
  * Discord's payload limits, and helpers for staying inside them.
  *
@@ -71,11 +73,18 @@ export function truncateText(text: string, max: number): string {
 /**
  * Wrap text in a fenced code block sized to fit `max`, fences included.
  *
- * Callers otherwise have to remember to subtract the fence characters, and the
- * failure mode is a 400 rather than a visibly clipped block.
+ * The content is escaped, because almost everything this bot puts in a code
+ * block is untrusted: journal output, command stdout, and — most directly —
+ * web server logs, whose request paths, user-agents and referrers are supplied
+ * verbatim by whoever made the request. A log line containing ``` would
+ * otherwise close the fence early and let a stranger render arbitrary markdown
+ * inside an operator's status output.
+ *
+ * Callers also do not have to remember to subtract the fence characters; the
+ * failure mode for that was a 400 rather than a visibly clipped block.
  */
 export function codeBlock(text: string, max: number = DiscordLimits.embedDescription): string {
   const fence = '```\n\n```'.length;
-  const body = truncateText(text, Math.max(0, max - fence));
+  const body = truncateText(escapeCodeBlock(text), Math.max(0, max - fence));
   return `\`\`\`\n${body}\n\`\`\``;
 }
