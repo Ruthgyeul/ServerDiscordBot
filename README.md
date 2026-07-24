@@ -215,23 +215,23 @@ not at runtime — everything else about how it presents itself is above.
 
   "services": [
     {
-      "name": "portfolio",
-      "label": "Portfolio",
-      "unit": "portfolio.service",
-      "description": "ruthgyeul.xyz",
+      "name": "web",
+      "label": "Main site",
+      "unit": "web.service",
+      "description": "Front-end application",
       "critical": true,
     },
   ],
 
   "websites": [
     {
-      "name": "portfolio",
-      "label": "Portfolio",
-      "url": "https://ruthgyeul.xyz",
+      "name": "main",
+      "label": "Main site",
+      "url": "https://example.com",
       "expectStatus": 200,
       "timeoutMs": 8000,
       "checkCert": true,
-      "service": "portfolio",
+      "service": "web",
     }, // links the site to the unit behind it
   ],
 
@@ -261,10 +261,10 @@ not at runtime — everything else about how it presents itself is above.
 
 Every `name` is the key used in commands and autocomplete: letters, digits,
 `.`, `-`, `_`, up to 64 characters, starting with a letter or digit. Case is
-preserved for display but **matched case-insensitively**, so `DefaultWeb` and
-`defaultweb` both resolve to the same entry — and two entries differing only by
+preserved for display but **matched case-insensitively**, so `WebApp` and
+`webapp` both resolve to the same entry — and two entries differing only by
 case are rejected as duplicates. Naming an entry after its unit file
-(`"name": "DefaultWeb"`, `"unit": "DefaultWeb.service"`) is fine.
+(`"name": "WebApp"`, `"unit": "WebApp.service"`) is fine.
 
 Only `name` plus the section's own required field (`unit`, `url`, `command`,
 `path`) are mandatory — everything else has a default.

@@ -57,7 +57,7 @@ export const DEFAULTS = {
  *
  * Discord requires command names to be lowercase, but that rule does not
  * extend to option values — and a service is very often named after its unit
- * file, which is frequently capitalised (`DefaultWeb.service`). Forcing
+ * file, which is frequently capitalised (`WebApp.service`). Forcing
  * lowercase here would mean the obvious config is the rejected one.
  *
  * What still matters: no whitespace (it makes values ambiguous to type), no

@@ -53,17 +53,17 @@ describe('normalizeServices', () => {
   });
 
   test('accepts a capitalised name matching the unit file', () => {
-    // Unit files are routinely capitalised (DefaultWeb.service), and naming
+    // Unit files are routinely capitalised (WebApp.service), and naming
     // the entry after its unit is the obvious thing to write.
     const { result, issues } = normalize(normalizeServices, [
-      { name: 'DefaultWeb', unit: 'DefaultWeb.service' },
-      { name: 'ServerMonitor', unit: 'ServerMonitor.service' },
+      { name: 'WebApp', unit: 'WebApp.service' },
+      { name: 'MonitorApp', unit: 'MonitorApp.service' },
     ]);
 
     assert.equal(issues.length, 0);
     assert.deepEqual(
       result.map((service) => service.name),
-      ['DefaultWeb', 'ServerMonitor'],
+      ['WebApp', 'MonitorApp'],
     );
   });
 
@@ -118,7 +118,7 @@ describe('normalizeServices', () => {
 describe('normalizeWebsites', () => {
   test('applies defaults for the optional fields', () => {
     const { result } = normalize(normalizeWebsites, [
-      { name: 'portfolio', url: 'https://ruthgyeul.xyz' },
+      { name: 'portfolio', url: 'https://example.com' },
     ]);
 
     assert.equal(result[0]?.expectStatus, 200);
@@ -276,16 +276,16 @@ describe('checkReferences', () => {
     checkReferences(
       [
         {
-          name: 'DefaultWeb',
-          label: 'Default web',
+          name: 'WebApp',
+          label: 'Web app',
           url: 'https://example.com',
           expectStatus: 200,
           timeoutMs: 8000,
           checkCert: true,
-          service: 'defaultweb',
+          service: 'webapp',
         },
       ],
-      [{ name: 'DefaultWeb', label: 'Default web', unit: 'DefaultWeb.service' }],
+      [{ name: 'WebApp', label: 'Web app', unit: 'WebApp.service' }],
       issues,
     );
 
