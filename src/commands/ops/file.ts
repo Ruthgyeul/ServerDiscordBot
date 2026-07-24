@@ -72,7 +72,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
       embeds: [
         infoEmbed(
           'No files allowlisted',
-          'Add entries under `"files"` in `config/config.json`, then run `/config reload`.',
+          'Add entries under `"files"` in `config.json`, then run `/config reload`.',
         ),
       ],
     });

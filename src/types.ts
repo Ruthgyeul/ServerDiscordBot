@@ -15,7 +15,7 @@ import type { AlertScheduler } from './services/alertScheduler.js';
  *
  * Everything the bot knows about the server it manages lives in these shapes.
  * Secrets and identity come from `.env`; the inventory (what to watch, what
- * may be run) comes from `config/config.json`. Adding a new website, service,
+ * may be run) comes from `config.json`. Adding a new website, service,
  * command or file is a config edit — never a code change.
  * ──────────────────────────────────────────────────────────────────────────── */
 

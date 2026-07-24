@@ -32,7 +32,7 @@ const command: CommandModule = {
 
     if (config.websites.length === 0) {
       await interaction.editReply({
-        embeds: [infoEmbed('No websites configured', 'Add sites in `config/config.json`.')],
+        embeds: [infoEmbed('No websites configured', 'Add sites in `config.json`.')],
       });
       return;
     }

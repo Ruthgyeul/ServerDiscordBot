@@ -8,7 +8,7 @@ import tseslint from 'typescript-eslint';
  */
 export default tseslint.config(
   {
-    ignores: ['node_modules/', 'dist/', 'logs/', 'config/config.json'],
+    ignores: ['node_modules/', 'dist/', 'logs/', 'config.json'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

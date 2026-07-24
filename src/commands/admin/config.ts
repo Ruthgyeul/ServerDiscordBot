@@ -18,7 +18,7 @@ const log = childLogger('command:config');
  * `/config` — inspect and hot-reload the bot's configuration.
  *
  * This is the command that makes the whole config story usable day to day:
- * edit `.env` or `config/config.json` on the server, run `/config reload`, and
+ * edit `.env` or `config.json` on the server, run `/config reload`, and
  * the new inventory, thresholds and branding take effect without a restart.
  * Always ephemeral — the output describes the server's internals.
  */

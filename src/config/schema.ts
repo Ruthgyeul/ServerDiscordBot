@@ -9,7 +9,7 @@ import type {
 } from '../types.js';
 
 /**
- * Validation and normalization for `config/config.json`.
+ * Validation and normalization for `config.json`.
  *
  * Design rules, in priority order:
  *

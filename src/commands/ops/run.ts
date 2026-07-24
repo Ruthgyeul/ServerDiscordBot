@@ -68,7 +68,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
       embeds: [
         infoEmbed(
           'No commands allowlisted',
-          'Add entries under `"commands"` in `config/config.json`, then run `/config reload`.',
+          'Add entries under `"commands"` in `config.json`, then run `/config reload`.',
         ),
       ],
       flags: MessageFlags.Ephemeral,

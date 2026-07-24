@@ -31,7 +31,7 @@ other apps), and the **websites** it serves — all from Discord. Written in
 ## Design principles
 
 - **One place to change things.** `.env` holds the bot's identity, secrets and
-  host-access mode; `config/config.json` holds everything about the server —
+  host-access mode; `config.json` holds everything about the server —
   services, websites, commands, files, thresholds. Adding a capability is a
   config edit, not a code change.
 - **Extensible** — drop a new file in `src/commands/<category>/` or
@@ -84,7 +84,7 @@ src/
 │   └── alertScheduler.ts    # periodic monitor + alert state machine
 └── lib/                     # shell, permissions, embeds, autocomplete, confirm, formatting
 dist/                        # compiled JS output (tsc), git-ignored
-config/config.example.json   # the inventory template — copy to config.json
+config.example.json          # the inventory template — copy to config.json
 ```
 
 Sources are `.ts`; `npm run build` compiles them to `dist/`, which is what you
@@ -128,10 +128,10 @@ autocomplete is gated the same way — non-admins never see the inventory.
 
 Two files, one job each.
 
-| File                 | Holds                                                          | Applied by                       |
-| -------------------- | -------------------------------------------------------------- | -------------------------------- |
-| `.env`               | Identity, secrets, access control, host-access mode            | `/config reload` (some: restart) |
-| `config/config.json` | The inventory: services, websites, commands, files, monitoring | `/config reload`                 |
+| File          | Holds                                                          | Applied by                       |
+| ------------- | -------------------------------------------------------------- | -------------------------------- |
+| `.env`        | Identity, secrets, access control, host-access mode            | `/config reload` (some: restart) |
+| `config.json` | The inventory: services, websites, commands, files, monitoring | `/config reload`                 |
 
 Both are validated at load. Invalid entries are **dropped**, not partially
 loaded — these lists are security allowlists — and every problem is reported
@@ -165,7 +165,7 @@ at once in the logs and via `/config issues`.
 The bot's Discord account username and avatar are set in the Developer Portal,
 not at runtime — everything else about how it presents itself is above.
 
-### `config/config.json`
+### `config.json`
 
 ```jsonc
 {
@@ -263,7 +263,7 @@ Adding a website, service, command or file needs **no restart and no
 redeploy** — command options are served by autocomplete from the live config:
 
 ```bash
-vim config/config.json     # add the entry
+vim config.json            # add the entry
 # then, in Discord:
 /config reload
 ```
@@ -288,8 +288,8 @@ git clone https://github.com/ruthgyeul/serverdiscordbot.git /opt/serverdiscordbo
 cd /opt/serverdiscordbot
 npm ci
 
-cp .env.example .env                                # tokens, IDs, admins, identity
-cp config/config.example.json config/config.json    # your services/sites/commands/files
+cp .env.example .env                  # tokens, IDs, admins, identity
+cp config.example.json config.json    # your services/sites/commands/files
 ```
 
 ### 3. Build

@@ -119,7 +119,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
 
   if (config.services.length === 0) {
     await interaction.editReply({
-      embeds: [infoEmbed('No managed services', 'Add services in `config/config.json`.')],
+      embeds: [infoEmbed('No managed services', 'Add services in `config.json`.')],
     });
     return;
   }
