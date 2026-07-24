@@ -6,7 +6,7 @@ import type {
   RunCommandConfig,
   ServiceConfig,
   WebsiteConfig,
-} from '../types.js';
+} from '../types/index.js';
 
 /**
  * Validation and normalization for `config.json`.
@@ -29,13 +29,20 @@ export const DEFAULTS = {
     enabled: true,
     intervalSeconds: 60,
     alertCooldownMinutes: 15,
-    checks: { resources: true, services: true, websites: true, certificates: true },
+    checks: {
+      resources: true,
+      services: true,
+      websites: true,
+      certificates: true,
+      failedUnits: false,
+    },
     thresholds: {
       cpuPercent: 85,
       memoryPercent: 90,
       diskPercent: 90,
       certExpiryDays: 14,
       responseMs: 0,
+      cpuTempCelsius: 0,
     },
     ignoreMounts: [] as string[],
     historyHours: 24,
@@ -45,8 +52,19 @@ export const DEFAULTS = {
   file: { maxLines: 200 },
 } as const;
 
-/** Names are used as command values and autocomplete keys — keep them tame. */
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,31}$/;
+/**
+ * Names are autocomplete *values*, not Discord command names.
+ *
+ * Discord requires command names to be lowercase, but that rule does not
+ * extend to option values — and a service is very often named after its unit
+ * file, which is frequently capitalised (`DefaultWeb.service`). Forcing
+ * lowercase here would mean the obvious config is the rejected one.
+ *
+ * What still matters: no whitespace (it makes values ambiguous to type), no
+ * characters that need escaping in the places these end up (embeds, alert
+ * keys, log fields), and a length inside Discord's 100-character value limit.
+ */
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** The raw, untrusted shape of a parsed config file. */
 export type RawConfig = Record<string, unknown>;
@@ -151,7 +169,8 @@ function readIdentity(
   }
   if (!NAME_PATTERN.test(name)) {
     ctx.error(
-      `Invalid name "${name}". Use 1–32 lowercase letters, digits, dot, dash or underscore.`,
+      `Invalid name "${name}". Use 1–64 letters, digits, dot, dash or underscore, ` +
+        'starting with a letter or digit.',
     );
     return null;
   }
@@ -191,15 +210,21 @@ function normalizeEntries<T extends { name: string }>(
     const identity = readIdentity(source, ctx);
     if (!identity) return;
 
-    if (seen.has(identity.name)) {
-      ctx.error(`Duplicate name "${identity.name}"; keeping the first definition.`);
+    // Compared case-insensitively because lookups are: `findService("web")`
+    // must not silently resolve to whichever of "Web" and "web" came first.
+    const key = identity.name.toLowerCase();
+    if (seen.has(key)) {
+      ctx.error(
+        `Duplicate name "${identity.name}" (names are matched case-insensitively); ` +
+          'keeping the first definition.',
+      );
       return;
     }
 
     const built = build(source, identity, ctx);
     if (!built || !ctx.ok) return;
 
-    seen.add(identity.name);
+    seen.add(key);
     result.push(built);
   });
 
@@ -362,6 +387,7 @@ export function normalizeMonitor(raw: unknown, issues: ConfigIssue[]): MonitorCo
       services: readBoolean(checks, 'services', d.checks.services, checksCtx),
       websites: readBoolean(checks, 'websites', d.checks.websites, checksCtx),
       certificates: readBoolean(checks, 'certificates', d.checks.certificates, checksCtx),
+      failedUnits: readBoolean(checks, 'failedUnits', d.checks.failedUnits, checksCtx),
     },
     thresholds: {
       cpuPercent: readNumber(thresholds, 'cpuPercent', d.thresholds.cpuPercent, thresholdCtx, {
@@ -393,6 +419,13 @@ export function normalizeMonitor(raw: unknown, issues: ConfigIssue[]): MonitorCo
         min: 0,
         max: 60000,
       }),
+      cpuTempCelsius: readNumber(
+        thresholds,
+        'cpuTempCelsius',
+        d.thresholds.cpuTempCelsius,
+        thresholdCtx,
+        { min: 0, max: 150 },
+      ),
     },
     ignoreMounts: readStringArray(source, 'ignoreMounts', ctx),
     historyHours: readNumber(source, 'historyHours', d.historyHours, ctx, {
@@ -408,9 +441,9 @@ export function checkReferences(
   services: ServiceConfig[],
   issues: ConfigIssue[],
 ): void {
-  const serviceNames = new Set(services.map((service) => service.name));
+  const serviceNames = new Set(services.map((service) => service.name.toLowerCase()));
   for (const site of websites) {
-    if (site.service && !serviceNames.has(site.service)) {
+    if (site.service && !serviceNames.has(site.service.toLowerCase())) {
       issues.push({
         scope: `websites.${site.name}`,
         message: `Refers to unknown service "${site.service}"; the link is ignored.`,
@@ -418,4 +451,17 @@ export function checkReferences(
       });
     }
   }
+}
+
+/**
+ * Command names the operator has switched off.
+ *
+ * Kept in config rather than as a flag on the command module: turning a
+ * misbehaving command off should not need a build and a redeploy, which is
+ * exactly the situation where you least want either.
+ */
+export function normalizeDisabledCommands(raw: unknown, issues: ConfigIssue[]): string[] {
+  const ctx = new EntryContext('disabledCommands', issues);
+  const names = readStringArray({ disabledCommands: raw }, 'disabledCommands', ctx);
+  return names.map((name) => name.trim().toLowerCase()).filter(Boolean);
 }

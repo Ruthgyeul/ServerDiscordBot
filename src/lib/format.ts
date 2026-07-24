@@ -1,5 +1,8 @@
 /**
  * Formatting helpers for human-readable output in Discord embeds.
+ *
+ * Sizing text to Discord's payload limits lives in `limits.ts` instead — that
+ * is a constraint of the API, not a question of how a value reads.
  */
 
 /** Convert a byte count into a human-friendly string (e.g. "3.2 GB"). */
@@ -35,10 +38,4 @@ export function progressBar(percent: number, size = 10): string {
   const clamped = Math.max(0, Math.min(100, percent));
   const filled = Math.round((clamped / 100) * size);
   return `${'█'.repeat(filled)}${'░'.repeat(size - filled)} ${formatPercent(clamped)}`;
-}
-
-/** Truncate text to fit inside a Discord code block / field value. */
-export function truncate(text: string, max = 1900): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 3)}...`;
 }

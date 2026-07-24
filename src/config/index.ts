@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { EnvReader, loadDotenv } from './env.js';
 import {
   checkReferences,
+  normalizeDisabledCommands,
   normalizeCommands,
   normalizeFiles,
   normalizeMonitor,
@@ -19,7 +20,7 @@ import type {
   RunCommandConfig,
   ServiceConfig,
   WebsiteConfig,
-} from '../types.js';
+} from '../types/index.js';
 
 /**
  * The single place the bot learns anything about itself or the host.
@@ -116,6 +117,7 @@ function buildConfig(issues: ConfigIssue[]): AppConfig {
       guildId: env.string('DISCORD_GUILD_ID'),
       alertChannelId: env.string('ALERT_CHANNEL_ID'),
       auditChannelId: env.string('AUDIT_CHANNEL_ID'),
+      ownerUserId: env.string('OWNER_USER_ID'),
     },
     access: {
       adminUserIds: env.list('ADMIN_USER_IDS'),
@@ -131,6 +133,8 @@ function buildConfig(issues: ConfigIssue[]): AppConfig {
       activityText: env.string('BOT_ACTIVITY_TEXT', 'the server 🖥️'),
       embedFooter: env.string('BOT_EMBED_FOOTER'),
       accentColor: env.color('BOT_ACCENT_COLOR', DEFAULT_ACCENT),
+      dynamicPresence: env.bool('BOT_DYNAMIC_PRESENCE', false),
+      presenceRefreshSeconds: env.int('BOT_PRESENCE_REFRESH_SECONDS', 60, 15, 3600),
     },
     system: {
       useSudo: env.bool('SYSTEMCTL_SUDO', false),
@@ -144,6 +148,7 @@ function buildConfig(issues: ConfigIssue[]): AppConfig {
     websites,
     commands: normalizeCommands(json['commands'], issues),
     files: normalizeFiles(json['files'], issues),
+    disabledCommands: normalizeDisabledCommands(json['disabledCommands'], issues),
     configPath,
   };
 }

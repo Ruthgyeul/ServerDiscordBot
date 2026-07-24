@@ -6,7 +6,7 @@ import {
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { config } from '../../config/index.js';
-import type { BotContext, CommandModule } from '../../types.js';
+import type { BotContext, CommandModule } from '../../types/index.js';
 
 /**
  * List every available command, grouped by category. Reads live from the

@@ -6,11 +6,10 @@ import {
 import { Permission } from '../../lib/permissions.js';
 import { config, configIssues, reloadConfig } from '../../config/index.js';
 import { infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
-import { truncate } from '../../lib/format.js';
-import { metricsHistory } from '../../services/metricsHistory.js';
+import { metricsHistory } from '../../services/monitor/metricsHistory.js';
+import { DiscordLimits, fitEntries } from '../../lib/limits.js';
 import { childLogger } from '../../logger.js';
-import { recordAudit } from '../../services/audit.js';
-import type { BotContext, CommandModule, ConfigIssue } from '../../types.js';
+import type { BotContext, CommandModule, ConfigIssue } from '../../types/index.js';
 
 const log = childLogger('command:config');
 
@@ -140,7 +139,7 @@ async function handleReload(
 
   const result = reloadConfig();
   log.info({ user: interaction.user.tag, counts: result.counts }, 'configuration reloaded');
-  recordAudit(context.client, {
+  context.audit({
     actor: interaction.user.tag,
     action: 'config.reload',
     target: result.configPath,
@@ -157,6 +156,9 @@ async function handleReload(
   ) {
     context.alertScheduler.restart();
   }
+  // Presence reads branding and the dynamic flag at apply time, but the
+  // refresh interval is baked into its timer.
+  context.presence.restart();
 
   const errors = result.issues.filter((issue) => issue.level === 'error');
   const embed = (errors.length > 0 ? warningEmbed : successEmbed)(
@@ -186,7 +188,7 @@ async function handleReload(
   if (result.issues.length > 0) {
     embed.addFields({
       name: `Issues (${result.issues.length})`,
-      value: truncate(formatIssues(result.issues), 1000),
+      value: fitEntries(formatIssues(result.issues), DiscordLimits.embedFieldValue),
       inline: false,
     });
   }
@@ -207,20 +209,18 @@ async function handleIssues(interaction: ChatInputCommandInteraction): Promise<v
     embeds: [
       warningEmbed(
         `${configIssues.length} configuration issue(s)`,
-        truncate(formatIssues(configIssues)),
+        fitEntries(formatIssues(configIssues), DiscordLimits.embedDescription),
       ),
     ],
     flags: MessageFlags.Ephemeral,
   });
 }
 
-function formatIssues(issues: ConfigIssue[]): string {
-  return issues
-    .map(
-      (issue) =>
-        `${issue.level === 'error' ? '❌' : '⚠️'} \`${issue.scope}\` — ${issue.message}`,
-    )
-    .join('\n');
+function formatIssues(issues: ConfigIssue[]): string[] {
+  return issues.map(
+    (issue) =>
+      `${issue.level === 'error' ? '❌' : '⚠️'} \`${issue.scope}\` — ${issue.message}`,
+  );
 }
 
 function describeChecks(): string {

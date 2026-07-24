@@ -1,16 +1,23 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import { getSnapshot, getHostInfo } from '../../services/systemMonitor.js';
+import {
+  getSnapshot,
+  getHostInfo,
+  getRebootStatus,
+} from '../../services/host/systemMonitor.js';
 import { formatBytes, formatDuration, progressBar } from '../../lib/format.js';
-import { metricsHistory, formatTrend } from '../../services/metricsHistory.js';
-import type { CommandModule } from '../../types.js';
+import { metricsHistory, formatTrend } from '../../services/monitor/metricsHistory.js';
+import { fitEntries } from '../../lib/limits.js';
+import { config } from '../../config/index.js';
+import type { CommandModule } from '../../types/index.js';
 
 /**
  * Show an at-a-glance dashboard of host health: CPU, memory, disks and uptime.
  * Read-only, so it is available to everyone by default.
  */
 const command: CommandModule = {
+  cooldownSeconds: 5,
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('status')
@@ -19,7 +26,11 @@ const command: CommandModule = {
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
-    const [snap, host] = await Promise.all([getSnapshot(), getHostInfo()]);
+    const [snap, host, reboot] = await Promise.all([
+      getSnapshot(),
+      getHostInfo(),
+      getRebootStatus(),
+    ]);
 
     const cores = snap.cpuCores > 0 ? ` · ${snap.cpuCores} cores` : '';
     const embed = infoEmbed(`🖥️ ${host.hostname}`)
@@ -46,6 +57,18 @@ const command: CommandModule = {
         },
       );
 
+    // Temperature only exists on hardware that exposes a sensor; a VM showing
+    // an empty field would read as a fault rather than as "not applicable".
+    if (snap.cpuTempC !== null) {
+      const limit = config.monitor.thresholds.cpuTempCelsius;
+      const hot = limit > 0 && snap.cpuTempC >= limit;
+      embed.addFields({
+        name: 'CPU temp',
+        value: `${hot ? '🌡️ ' : ''}${snap.cpuTempC.toFixed(1)} °C`,
+        inline: true,
+      });
+    }
+
     // Swap is only worth the space when the host actually has some.
     if (snap.swapTotal > 0) {
       embed.addFields({
@@ -60,6 +83,17 @@ const command: CommandModule = {
         name: `Disk ${disk.mount}`,
         value: `${progressBar(disk.usePercent)}\n${formatBytes(disk.used)} / ${formatBytes(disk.size)}`,
         inline: true,
+      });
+    }
+
+    if (reboot.required) {
+      embed.addFields({
+        name: '⚠️ Reboot required',
+        value:
+          reboot.packages.length > 0
+            ? `Pending since a package update: ${fitEntries(reboot.packages, 900, ', ')}`
+            : 'A package update has requested a reboot.',
+        inline: false,
       });
     }
 

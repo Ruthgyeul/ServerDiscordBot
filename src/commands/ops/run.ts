@@ -6,13 +6,12 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { config, findCommand } from '../../config/index.js';
-import { parseExtraArgs, runCommand } from '../../services/commandRunner.js';
+import { parseExtraArgs, runCommand } from '../../services/host/commandRunner.js';
 import { infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
 import { confirmAction } from '../../lib/confirm.js';
-import { recordAudit } from '../../services/audit.js';
-import { truncate } from '../../lib/format.js';
-import type { BotContext, CommandModule } from '../../types.js';
+import { DiscordLimits, codeBlock, fitEntries } from '../../lib/limits.js';
+import type { BotContext, CommandModule } from '../../types/index.js';
 
 /**
  * `/run` — execute one of the commands allowlisted in `config.commands`.
@@ -23,6 +22,7 @@ import type { BotContext, CommandModule } from '../../types.js';
  * list itself is the only place a new capability can be granted.
  */
 const command: CommandModule = {
+  cooldownSeconds: 5,
   permission: Permission.ADMIN,
   data: new SlashCommandBuilder()
     .setName('run')
@@ -89,7 +89,10 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
 
   await interaction.reply({
     embeds: [
-      infoEmbed(`Allowlisted commands (${config.commands.length})`, lines.join('\n\n')),
+      infoEmbed(
+        `Allowlisted commands (${config.commands.length})`,
+        fitEntries(lines, DiscordLimits.embedDescription, '\n\n'),
+      ),
     ],
     flags: MessageFlags.Ephemeral,
   });
@@ -119,7 +122,7 @@ async function handleExec(
   }
 
   const outcome = await runCommand(name, extra, interaction.user.tag);
-  recordAudit(context.client, {
+  context.audit({
     actor: interaction.user.tag,
     action: 'run.exec',
     target: outcome.entry.name,
@@ -131,7 +134,8 @@ async function handleExec(
     embeds: [
       successEmbed(
         outcome.entry.label,
-        `\`${outcome.argv.join(' ')}\` · ${outcome.durationMs} ms\n\`\`\`\n${truncate(body, 1500)}\n\`\`\``,
+        `\`${outcome.argv.join(' ')}\` · ${outcome.durationMs} ms\n` +
+          codeBlock(body, DiscordLimits.embedDescription - 200),
       ),
     ],
   });

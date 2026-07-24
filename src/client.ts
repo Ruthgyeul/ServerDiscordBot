@@ -1,8 +1,10 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import { loadCommands } from './handlers/commandLoader.js';
 import { loadEvents } from './handlers/eventLoader.js';
-import { AlertScheduler } from './services/alertScheduler.js';
-import type { BotContext } from './types.js';
+import { AlertScheduler } from './services/monitor/alertScheduler.js';
+import { recordAudit } from './services/audit.js';
+import { PresenceManager } from './services/monitor/presence.js';
+import type { BotContext } from './types/index.js';
 
 /**
  * Construct and fully wire the Discord client: intents, commands, events and
@@ -21,10 +23,13 @@ export async function createClient(): Promise<Client> {
 
   // The context object is dependency-injected into every command and event,
   // avoiding hidden global state and making handlers easy to reason about.
+  const alertScheduler = new AlertScheduler(client);
   const context: BotContext = {
     client,
     commands,
-    alertScheduler: new AlertScheduler(client),
+    alertScheduler,
+    presence: new PresenceManager(client, alertScheduler),
+    audit: (entry) => recordAudit(client, entry),
   };
 
   await loadEvents(client, context);

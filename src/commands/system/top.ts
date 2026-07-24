@@ -5,9 +5,10 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import { getTopProcesses } from '../../services/systemMonitor.js';
+import { getTopProcesses } from '../../services/host/systemMonitor.js';
 import { formatPercent } from '../../lib/format.js';
-import type { CommandModule } from '../../types.js';
+import { codeBlock } from '../../lib/limits.js';
+import type { CommandModule } from '../../types/index.js';
 
 /**
  * `/top` — the heaviest processes on the host.
@@ -17,6 +18,7 @@ import type { CommandModule } from '../../types.js';
  * the server.
  */
 const command: CommandModule = {
+  cooldownSeconds: 10,
   permission: Permission.ADMIN,
   data: new SlashCommandBuilder()
     .setName('top')
@@ -63,7 +65,7 @@ const command: CommandModule = {
       embeds: [
         infoEmbed(
           `Top ${processes.length} processes by ${sortBy === 'cpu' ? 'CPU' : 'memory'}`,
-          `\`\`\`\n${header}\n${rows.join('\n')}\n\`\`\``,
+          codeBlock(`${header}\n${rows.join('\n')}`),
         ),
       ],
     });

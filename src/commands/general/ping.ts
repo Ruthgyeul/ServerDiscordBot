@@ -5,10 +5,11 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import type { CommandModule } from '../../types.js';
+import type { CommandModule } from '../../types/index.js';
 
 /** A trivial liveness/latency check. Public so anyone can confirm the bot is up. */
 const command: CommandModule = {
+  cooldownSeconds: 3,
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('ping')

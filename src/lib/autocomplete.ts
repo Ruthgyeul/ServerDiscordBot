@@ -1,5 +1,5 @@
 import type { AutocompleteInteraction } from 'discord.js';
-import type { NamedEntry } from '../types.js';
+import type { NamedEntry } from '../types/index.js';
 
 /** Discord caps an autocomplete response at 25 choices. */
 const MAX_CHOICES = 25;

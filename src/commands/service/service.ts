@@ -12,15 +12,15 @@ import {
   getStatus,
   getAllStatuses,
   getLogs,
+  getFailedUnits,
   ServiceAction,
-} from '../../services/serviceManager.js';
-import { infoEmbed, successEmbed } from '../../lib/embeds.js';
+} from '../../services/host/serviceManager.js';
+import { infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
+import { DiscordLimits, codeBlock, fitEntries } from '../../lib/limits.js';
 import { confirmAction } from '../../lib/confirm.js';
-import { recordAudit } from '../../services/audit.js';
-import { truncate } from '../../lib/format.js';
 import { childLogger } from '../../logger.js';
-import type { BotContext, CommandModule } from '../../types.js';
+import type { BotContext, CommandModule } from '../../types/index.js';
 
 const log = childLogger('command:service');
 
@@ -70,6 +70,23 @@ const command: CommandModule = {
     )
     .addSubcommand((sub) =>
       sub
+        .setName('enable')
+        .setDescription('Start this service automatically at boot.')
+        .addStringOption(nameOption),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('disable')
+        .setDescription('Stop starting this service at boot.')
+        .addStringOption(nameOption),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('failed')
+        .setDescription('List every failed unit on the host, managed or not.'),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('logs')
         .setDescription('Show recent journal logs for a service.')
         .addStringOption(nameOption)
@@ -102,6 +119,8 @@ const command: CommandModule = {
         return handleStatus(interaction);
       case 'logs':
         return handleLogs(interaction);
+      case 'failed':
+        return handleFailed(interaction);
       default:
         return handleControl(interaction, sub, context);
     }
@@ -128,12 +147,20 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
   const lines = statuses.map((s) => {
     const icon = s.running ? '🟢' : '🔴';
     const critical = s.service.critical ? ' ❗' : '';
-    return `${icon} **${s.service.label}**${critical} \`${s.service.unit}\` — ${s.activeState}/${s.subState}`;
+    // A unit that is running but disabled will not survive a reboot — worth
+    // flagging in the overview, not only in the detail view.
+    const boot = s.enabled ? '' : ' · ⚠️ not enabled at boot';
+    return `${icon} **${s.service.label}**${critical} \`${s.service.unit}\` — ${s.activeState}/${s.subState}${boot}`;
   });
 
   const up = statuses.filter((s) => s.running).length;
   await interaction.editReply({
-    embeds: [infoEmbed(`Managed services — ${up}/${statuses.length} up`, lines.join('\n'))],
+    embeds: [
+      infoEmbed(
+        `Managed services — ${up}/${statuses.length} up`,
+        fitEntries(lines, DiscordLimits.embedDescription),
+      ),
+    ],
   });
 }
 
@@ -153,6 +180,12 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
           value: `${status.activeState} / ${status.subState} (${status.loadState})`,
           inline: false,
         },
+        {
+          name: 'At boot',
+          value: `${status.enabled ? '✅ enabled' : '⚠️ disabled'} (\`${status.unitFileState}\`)`,
+          inline: true,
+        },
+        { name: 'Restarts', value: String(status.restarts), inline: true },
         { name: 'Active since', value: status.since || '—', inline: false },
       ),
     ],
@@ -167,7 +200,7 @@ async function handleLogs(interaction: ChatInputCommandInteraction): Promise<voi
   const output = await getLogs(name, lines, priority);
 
   await interaction.editReply({
-    embeds: [infoEmbed(`Logs — ${name}`, `\`\`\`\n${truncate(output)}\n\`\`\``)],
+    embeds: [infoEmbed(`Logs — ${name}`, codeBlock(output))],
   });
 }
 
@@ -190,6 +223,8 @@ async function handleControl(
     ServiceAction.START,
     ServiceAction.STOP,
     ServiceAction.RESTART,
+    ServiceAction.ENABLE,
+    ServiceAction.DISABLE,
   ];
   const resolved = mutating.find((a) => a === action);
   if (!resolved) throw new Error(`Unsupported action "${action}".`);
@@ -197,7 +232,10 @@ async function handleControl(
   const service = findService(name);
   if (!service) throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
 
-  const needsConfirmation = service.critical && resolved !== ServiceAction.START;
+  // Anything that can leave a critical service down — now or after the next
+  // reboot — asks first. START and ENABLE only ever move towards working.
+  const SAFE_ACTIONS = new Set([ServiceAction.START, ServiceAction.ENABLE]);
+  const needsConfirmation = Boolean(service.critical) && !SAFE_ACTIONS.has(resolved);
   if (needsConfirmation) {
     const confirmed = await confirmAction(interaction, {
       title: `${capitalize(resolved)} a critical service?`,
@@ -217,7 +255,7 @@ async function handleControl(
     { user: interaction.user.tag, service: name, action: resolved },
     'service action performed via Discord',
   );
-  recordAudit(context.client, {
+  context.audit({
     actor: interaction.user.tag,
     action: `service.${resolved}`,
     target: service.unit,
@@ -231,6 +269,8 @@ async function handleControl(
     [ServiceAction.START]: 'Started',
     [ServiceAction.STOP]: 'Stopped',
     [ServiceAction.RESTART]: 'Restarted',
+    [ServiceAction.ENABLE]: 'Enabled at boot',
+    [ServiceAction.DISABLE]: 'Disabled at boot',
     [ServiceAction.STATUS]: 'Checked',
   };
 
@@ -238,7 +278,38 @@ async function handleControl(
     embeds: [
       successEmbed(
         `${pastTense[resolved]} ${result.service.label}`,
-        `New state: ${icon} (${status.activeState}/${status.subState})`,
+        `Now: ${icon} (${status.activeState}/${status.subState}) · ` +
+          `at boot: ${status.enabled ? 'enabled' : 'disabled'}`,
+      ),
+    ],
+  });
+}
+
+/**
+ * List failed units. Read-only and not restricted to the allowlist, so it also
+ * surfaces breakage in units nobody remembered to register with the bot.
+ */
+async function handleFailed(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const failed = await getFailedUnits();
+  if (failed.length === 0) {
+    await interaction.editReply({
+      embeds: [successEmbed('No failed units', 'systemd reports everything healthy.')],
+    });
+    return;
+  }
+
+  const lines = failed.map((unit) => {
+    const tag = unit.managed ? ' *(managed)*' : '';
+    return `🔴 \`${unit.unit}\`${tag} — ${unit.activeState}/${unit.subState}\n${unit.description}`;
+  });
+
+  await interaction.editReply({
+    embeds: [
+      warningEmbed(
+        `${failed.length} failed unit(s)`,
+        fitEntries(lines, DiscordLimits.embedDescription, '\n\n'),
       ),
     ],
   });

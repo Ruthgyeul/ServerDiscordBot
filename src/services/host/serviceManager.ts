@@ -1,19 +1,25 @@
-import { run } from '../lib/shell.js';
-import { findService, config } from '../config/index.js';
-import { childLogger } from '../logger.js';
-import type { ServiceConfig } from '../types.js';
+import { run } from '../../lib/shell.js';
+import { findService, config } from '../../config/index.js';
+import { childLogger } from '../../logger.js';
+import type { ServiceConfig } from '../../types/index.js';
 
 const log = childLogger('serviceManager');
 
 /**
  * Actions that may be performed on a managed systemd unit.
- * `start`, `stop` and `restart` change state and are privileged.
- * `status` is read-only.
+ *
+ * `start`, `stop` and `restart` change the unit's *current* state; `enable`
+ * and `disable` change whether it comes back after a reboot. Both are
+ * privileged and both are mutating — a service that is running but disabled is
+ * a machine that comes up broken, which is worth being able to see and fix
+ * from the same place.
  */
 export enum ServiceAction {
   START = 'start',
   STOP = 'stop',
   RESTART = 'restart',
+  ENABLE = 'enable',
+  DISABLE = 'disable',
   STATUS = 'status',
 }
 
@@ -21,6 +27,8 @@ const MUTATING_ACTIONS = new Set<ServiceAction>([
   ServiceAction.START,
   ServiceAction.STOP,
   ServiceAction.RESTART,
+  ServiceAction.ENABLE,
+  ServiceAction.DISABLE,
 ]);
 
 export interface ControlResult {
@@ -35,8 +43,24 @@ export interface ServiceStatus {
   subState: string;
   loadState: string;
   running: boolean;
+  /** Whether the unit is wired to start at boot. */
+  enabled: boolean;
+  /** Raw UnitFileState, e.g. "enabled", "disabled", "static", "masked". */
+  unitFileState: string;
   since: string | null;
+  /** Times systemd has restarted the unit — a flapping service shows up here. */
+  restarts: number;
   error?: string;
+}
+
+/** A failed unit on the host, including ones outside the managed allowlist. */
+export interface FailedUnit {
+  unit: string;
+  activeState: string;
+  subState: string;
+  description: string;
+  /** True when this unit is one the bot manages. */
+  managed: boolean;
 }
 
 /**
@@ -109,7 +133,7 @@ export async function getStatus(name: string): Promise<ServiceStatus> {
     throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
   }
 
-  const props = 'ActiveState,SubState,LoadState,ActiveEnterTimestamp';
+  const props = 'ActiveState,SubState,LoadState,ActiveEnterTimestamp,UnitFileState,NRestarts';
   const { file, args } = buildInvocation('systemctl', [
     'show',
     service.unit,
@@ -120,14 +144,60 @@ export async function getStatus(name: string): Promise<ServiceStatus> {
   const { stdout } = await run(file, args);
   const parsed = parseKeyValue(stdout);
 
+  const unitFileState = parsed.UnitFileState ?? 'unknown';
   return {
     service,
     activeState: parsed.ActiveState ?? 'unknown',
     subState: parsed.SubState ?? 'unknown',
     loadState: parsed.LoadState ?? 'unknown',
     running: parsed.ActiveState === 'active',
+    // "enabled-runtime" also survives to the next boot; "static" units have no
+    // install section and are pulled in by something else, so neither counts
+    // as an operator-visible problem.
+    enabled: unitFileState.startsWith('enabled') || unitFileState === 'static',
+    unitFileState,
     since: parsed.ActiveEnterTimestamp || null,
+    restarts: Number(parsed.NRestarts ?? 0) || 0,
   };
+}
+
+/**
+ * Every unit the host currently considers failed.
+ *
+ * Deliberately not limited to the allowlist: the allowlist says what the bot
+ * may *control*, while this answers "is anything on this machine broken?" —
+ * including the unit someone added last week and forgot to register. It is
+ * read-only, so widening the view costs nothing.
+ */
+export async function getFailedUnits(): Promise<FailedUnit[]> {
+  const { file, args } = buildInvocation('systemctl', [
+    'list-units',
+    '--failed',
+    '--all',
+    '--no-legend',
+    '--no-pager',
+    '--plain',
+  ]);
+
+  const { stdout } = await run(file, args);
+  const managed = new Set(config.services.map((service) => service.unit));
+
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      // UNIT LOAD ACTIVE SUB DESCRIPTION…
+      const [unit = '', , activeState = '', subState = '', ...rest] = line.split(/\s+/);
+      return {
+        unit,
+        activeState,
+        subState,
+        description: rest.join(' '),
+        managed: managed.has(unit),
+      };
+    })
+    .filter((entry) => entry.unit.length > 0);
 }
 
 /** Fetch the status of every managed service concurrently. */
@@ -145,7 +215,10 @@ export async function getAllStatuses(): Promise<ServiceStatus[]> {
           activeState: 'error',
           subState: message,
           loadState: 'error',
+          enabled: false,
+          unitFileState: 'unknown',
           since: null,
+          restarts: 0,
           error: message,
         };
       }
