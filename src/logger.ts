@@ -1,4 +1,4 @@
-import pino from 'pino';
+import pino, { type Logger } from 'pino';
 import { config } from './config.js';
 
 /**
@@ -10,7 +10,7 @@ import { config } from './config.js';
  */
 const isProduction = config.env === 'production';
 
-export const logger = pino({
+export const logger: Logger = pino({
   level: config.logLevel,
   ...(isProduction
     ? {}
@@ -26,10 +26,7 @@ export const logger = pino({
       }),
 });
 
-/**
- * Create a child logger tagged with a component name for easy filtering.
- * @param {string} name
- */
-export function childLogger(name) {
+/** Create a child logger tagged with a component name for easy filtering. */
+export function childLogger(name: string): Logger {
   return logger.child({ component: name });
 }

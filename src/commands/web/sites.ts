@@ -1,16 +1,15 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
-import { config } from '../../config.js';
+import { config, findWebsite } from '../../config.js';
 import { checkAllSites, checkSite } from '../../services/webMonitor.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import { findWebsite } from '../../config.js';
+import type { CommandModule, WebsiteConfig } from '../../types.js';
 
 /**
  * `/sites` — check the HTTP health of the websites hosted on this server.
  * Read-only; available to everyone by default.
- * @type {import('../../handlers/commandLoader.js').Command}
  */
-export default {
+const command: CommandModule = {
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('sites')
@@ -24,7 +23,7 @@ export default {
         ),
     ),
 
-  async execute(interaction) {
+  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
     if (config.websites.length === 0) {
@@ -54,11 +53,10 @@ export default {
   },
 };
 
-/**
- * Resolve a site name to its config entry or throw a clear error.
- * @param {string} name
- */
-function requireSite(name) {
+export default command;
+
+/** Resolve a site name to its config entry or throw a clear error. */
+function requireSite(name: string): WebsiteConfig {
   const site = findWebsite(name);
   if (!site) throw new Error(`Unknown website "${name}".`);
   return site;

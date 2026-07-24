@@ -1,29 +1,29 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 /**
- * ESLint flat config (ESLint 9+). Keeps the codebase consistent with sensible,
- * low-friction rules that catch real bugs without being noisy.
+ * ESLint flat config (ESLint 9 + typescript-eslint). Keeps the codebase
+ * consistent with sensible, low-friction rules that catch real bugs.
  */
-export default [
-  js.configs.recommended,
+export default tseslint.config(
   {
-    files: ['**/*.js'],
+    ignores: ['node_modules/', 'dist/', 'logs/', 'config/config.json'],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ['**/*.ts'],
     languageOptions: {
-      ecmaVersion: 2023,
-      sourceType: 'module',
       globals: {
         ...globals.node,
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-console': 'warn',
       'prefer-const': 'error',
       eqeqeq: ['error', 'smart'],
     },
   },
-  {
-    ignores: ['node_modules/', 'logs/', 'config/config.json'],
-  },
-];
+);

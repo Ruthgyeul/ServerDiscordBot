@@ -26,9 +26,12 @@ if ! id "${SERVICE_USER}" &>/dev/null; then
   useradd --system --home "${APP_DIR}" --shell /usr/sbin/nologin "${SERVICE_USER}"
 fi
 
-# 2. Install Node dependencies (production only).
+# 2. Install dependencies and compile TypeScript.
+#    Dev deps (typescript) are needed for the build, so we do a full install.
 echo "==> Installing npm dependencies"
-sudo -u "${SERVICE_USER}" -H bash -c "cd '${APP_DIR}' && npm ci --omit=dev"
+sudo -u "${SERVICE_USER}" -H bash -c "cd '${APP_DIR}' && npm ci"
+echo "==> Building (tsc -> dist/)"
+sudo -u "${SERVICE_USER}" -H bash -c "cd '${APP_DIR}' && npm run build"
 
 # 3. Require a .env before enabling the service.
 if [[ ! -f "${APP_DIR}/.env" ]]; then

@@ -1,15 +1,13 @@
+import type { GuildMember, Interaction } from 'discord.js';
 import { config } from '../config.js';
 
-/**
- * Permission levels a command can require.
- * @readonly
- */
-export const Permission = Object.freeze({
+/** Permission levels a command can require. */
+export enum Permission {
   /** Anyone in the server may run the command. */
-  EVERYONE: 'everyone',
+  EVERYONE = 'everyone',
   /** Only configured admin users/roles may run the command. */
-  ADMIN: 'admin',
-});
+  ADMIN = 'admin',
+}
 
 /**
  * Decide whether a member is an administrator of the bot.
@@ -18,11 +16,8 @@ export const Permission = Object.freeze({
  * any role listed in ADMIN_ROLE_IDS. This is independent from Discord's own
  * "Administrator" permission on purpose, so bot control can be delegated
  * without granting server-wide power.
- *
- * @param {import('discord.js').GuildMember | null} member
- * @returns {boolean}
  */
-export function isAdmin(member) {
+export function isAdmin(member: GuildMember | null): boolean {
   if (!member) return false;
 
   if (config.access.adminUserIds.includes(member.id)) return true;
@@ -35,13 +30,9 @@ export function isAdmin(member) {
   return false;
 }
 
-/**
- * Check whether an interaction's author satisfies a required permission level.
- * @param {import('discord.js').Interaction} interaction
- * @param {string} required - A {@link Permission} value.
- * @returns {boolean}
- */
-export function hasPermission(interaction, required) {
+/** Check whether an interaction's author satisfies a required permission level. */
+export function hasPermission(interaction: Interaction, required: Permission): boolean {
   if (required === Permission.EVERYONE) return true;
-  return isAdmin(interaction.member);
+  // interaction.member is a GuildMember in guild contexts; null in DMs.
+  return isAdmin(interaction.member as GuildMember | null);
 }

@@ -1,3 +1,4 @@
+import type { Client, EmbedBuilder, SendableChannels } from 'discord.js';
 import { config } from '../config.js';
 import { childLogger } from '../logger.js';
 import { getSnapshot } from './systemMonitor.js';
@@ -18,19 +19,19 @@ const log = childLogger('alertScheduler');
  * condition too frequently. This keeps the channel signal-rich, not spammy.
  */
 export class AlertScheduler {
-  /**
-   * @param {import('discord.js').Client} client
-   */
-  constructor(client) {
+  private readonly client: Client;
+  /** key -> last alert timestamp (ms) */
+  private readonly activeAlerts = new Map<string, number>();
+  private timer: NodeJS.Timeout | null = null;
+  private readonly cooldownMs: number;
+
+  constructor(client: Client) {
     this.client = client;
-    /** @type {Map<string, number>} key -> last alert timestamp (ms) */
-    this.activeAlerts = new Map();
-    this.timer = null;
     this.cooldownMs = config.monitor.alertCooldownMinutes * 60 * 1000;
   }
 
   /** Start the recurring monitor loop (no-op if disabled in config). */
-  start() {
+  start(): void {
     if (!config.monitor.enabled) {
       log.info('Monitoring disabled in config; scheduler not started.');
       return;
@@ -41,7 +42,9 @@ export class AlertScheduler {
 
     const intervalMs = config.monitor.intervalSeconds * 1000;
     this.timer = setInterval(() => {
-      this.tick().catch((err) => log.error({ err: err.message }, 'monitor tick failed'));
+      this.tick().catch((err: unknown) =>
+        log.error({ err: errorMessage(err) }, 'monitor tick failed'),
+      );
     }, intervalMs);
     // Do not keep the event loop alive solely for the timer.
     this.timer.unref?.();
@@ -50,17 +53,17 @@ export class AlertScheduler {
   }
 
   /** Stop the monitor loop. */
-  stop() {
+  stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   /** Run one full evaluation pass. */
-  async tick() {
+  async tick(): Promise<void> {
     await Promise.all([this.checkResources(), this.checkServices(), this.checkWebsites()]);
   }
 
-  async checkResources() {
+  private async checkResources(): Promise<void> {
     const snap = await getSnapshot();
     const t = config.monitor.thresholds;
 
@@ -88,7 +91,7 @@ export class AlertScheduler {
     }
   }
 
-  async checkServices() {
+  private async checkServices(): Promise<void> {
     const statuses = await getAllStatuses();
     for (const status of statuses) {
       this.evaluate(
@@ -100,7 +103,7 @@ export class AlertScheduler {
     }
   }
 
-  async checkWebsites() {
+  private async checkWebsites(): Promise<void> {
     const results = await checkAllSites();
     for (const result of results) {
       this.evaluate(
@@ -114,12 +117,12 @@ export class AlertScheduler {
 
   /**
    * Core state-machine for a single monitored condition.
-   * @param {string} key      Stable identifier for this condition.
-   * @param {boolean} isBad   Whether the condition is currently unhealthy.
-   * @param {string} title    Alert title.
-   * @param {string} detail   Alert body.
+   * @param key    Stable identifier for this condition.
+   * @param isBad  Whether the condition is currently unhealthy.
+   * @param title  Alert title.
+   * @param detail Alert body.
    */
-  evaluate(key, isBad, title, detail) {
+  private evaluate(key: string, isBad: boolean, title: string, detail: string): void {
     const now = Date.now();
     const lastAlert = this.activeAlerts.get(key);
 
@@ -137,21 +140,23 @@ export class AlertScheduler {
     }
   }
 
-  /**
-   * Post an embed to the alert channel, tolerating a missing/invalid channel.
-   * @param {import('discord.js').EmbedBuilder} embed
-   */
-  send(embed) {
+  /** Post an embed to the alert channel, tolerating a missing/invalid channel. */
+  private send(embed: EmbedBuilder): void {
     const channelId = config.discord.alertChannelId;
     if (!channelId) return;
 
     const channel = this.client.channels.cache.get(channelId);
-    if (!channel?.isTextBased()) {
-      log.warn({ channelId }, 'alert channel not found or not text-based');
+    if (!channel?.isTextBased() || !channel.isSendable()) {
+      log.warn({ channelId }, 'alert channel not found or not sendable');
       return;
     }
-    channel.send({ embeds: [embed] }).catch((err) => {
-      log.error({ err: err.message }, 'failed to send alert');
+    (channel as SendableChannels).send({ embeds: [embed] }).catch((err: unknown) => {
+      log.error({ err: errorMessage(err) }, 'failed to send alert');
     });
   }
+}
+
+/** Extract a message string from an unknown thrown value. */
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

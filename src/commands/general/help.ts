@@ -1,29 +1,33 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  MessageFlags,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { config } from '../../config.js';
+import type { BotContext, CommandModule } from '../../types.js';
 
 /**
  * List every available command, grouped by category. Reads live from the
  * loaded command collection, so newly added commands appear automatically.
- * @type {import('../../handlers/commandLoader.js').Command}
  */
-export default {
+const command: CommandModule = {
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('help')
     .setDescription('Show the list of available commands.'),
 
-  async execute(interaction, context) {
-    /** @type {Map<string, string[]>} */
-    const byCategory = new Map();
+  async execute(interaction: ChatInputCommandInteraction, context: BotContext): Promise<void> {
+    const byCategory = new Map<string, string[]>();
 
-    for (const command of context.commands.values()) {
-      const category = command.category ?? 'general';
-      const scope = command.permission === Permission.EVERYONE ? '' : ' 🔒';
-      const line = `**/${command.data.name}**${scope} — ${command.data.description}`;
-      if (!byCategory.has(category)) byCategory.set(category, []);
-      byCategory.get(category).push(line);
+    for (const entry of context.commands.values()) {
+      const category = entry.category ?? 'general';
+      const scope = entry.permission === Permission.EVERYONE ? '' : ' 🔒';
+      const line = `**/${entry.data.name}**${scope} — ${entry.data.description}`;
+      const lines = byCategory.get(category) ?? [];
+      lines.push(line);
+      byCategory.set(category, lines);
     }
 
     const embed = infoEmbed(
@@ -42,9 +46,8 @@ export default {
   },
 };
 
-/**
- * @param {string} text
- */
-function capitalize(text) {
+export default command;
+
+function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

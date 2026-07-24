@@ -1,21 +1,21 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { getSnapshot, getHostInfo } from '../../services/systemMonitor.js';
 import { formatBytes, formatDuration, progressBar } from '../../lib/format.js';
+import type { CommandModule } from '../../types.js';
 
 /**
  * Show an at-a-glance dashboard of host health: CPU, memory, disks and uptime.
  * Read-only, so it is available to everyone by default.
- * @type {import('../../handlers/commandLoader.js').Command}
  */
-export default {
+const command: CommandModule = {
   permission: Permission.EVERYONE,
   data: new SlashCommandBuilder()
     .setName('status')
     .setDescription('Show host CPU, memory, disk and uptime at a glance.'),
 
-  async execute(interaction) {
+  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
     const [snap, host] = await Promise.all([getSnapshot(), getHostInfo()]);
@@ -51,3 +51,5 @@ export default {
     await interaction.editReply({ embeds: [embed] });
   },
 };
+
+export default command;
