@@ -1,0 +1,48 @@
+# systemd unit for ServerDiscordBot
+#
+# Install:
+#   sudo cp deploy/serverdiscordbot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now serverdiscordbot
+#
+# Adjust User, WorkingDirectory and ExecStart to match your deployment.
+# The provided values assume the repo lives at /opt/serverdiscordbot and runs
+# as a dedicated, unprivileged "botuser".
+
+[Unit]
+Description=Server Management Discord Bot
+Documentation=https://github.com/ruthgyeul/serverdiscordbot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/serverdiscordbot
+ExecStart=/usr/bin/node src/index.js
+EnvironmentFile=/opt/serverdiscordbot/.env
+
+# Reliability: restart on failure with a small backoff.
+Restart=on-failure
+RestartSec=5s
+
+# Logging goes to journald; view with: journalctl -u serverdiscordbot -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=serverdiscordbot
+
+# ── Hardening ────────────────────────────────────────────────────────────
+# The bot needs to run systemctl/journalctl (via a scoped sudoers rule), so we
+# cannot fully lock it down, but these still reduce blast radius. Loosen any
+# option that conflicts with your service-control setup.
+NoNewPrivileges=false
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

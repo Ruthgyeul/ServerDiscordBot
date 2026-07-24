@@ -1,0 +1,42 @@
+{
+  "monitor": {
+    "enabled": true,
+    "intervalSeconds": 60,
+    "alertCooldownMinutes": 15,
+    "thresholds": {
+      "cpuPercent": 85,
+      "memoryPercent": 90,
+      "diskPercent": 90
+    }
+  },
+  "services": [
+    {
+      "name": "nginx",
+      "label": "Nginx",
+      "unit": "nginx.service",
+      "description": "Reverse proxy / web server"
+    },
+    {
+      "name": "blog",
+      "label": "Blog site",
+      "unit": "blog.service",
+      "description": "Personal blog (Node app)"
+    }
+  ],
+  "websites": [
+    {
+      "name": "main",
+      "label": "Main site",
+      "url": "https://example.com",
+      "expectStatus": 200,
+      "timeoutMs": 8000
+    },
+    {
+      "name": "blog",
+      "label": "Blog",
+      "url": "https://blog.example.com",
+      "expectStatus": 200,
+      "timeoutMs": 8000
+    }
+  ]
+}

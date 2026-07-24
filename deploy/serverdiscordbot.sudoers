@@ -1,0 +1,17 @@
+# Scoped sudoers rule for ServerDiscordBot
+#
+# This lets the unprivileged "botuser" run ONLY systemctl and journalctl,
+# without a password, so the bot can control services safely. The bot itself
+# further restricts which units can be targeted via its config allowlist.
+#
+# Install (validate before saving!):
+#   sudo visudo -f /etc/sudoers.d/serverdiscordbot
+#   # paste the lines below, save, and ensure `sudo visudo -c` reports OK
+#
+# Then set SYSTEMCTL_SUDO=true in the bot's .env so it prefixes commands.
+#
+# For tighter control, replace the blanket systemctl line with per-unit rules,
+# e.g.:
+#   botuser ALL=(root) NOPASSWD: /usr/bin/systemctl start nginx.service, /usr/bin/systemctl stop nginx.service
+
+botuser ALL=(root) NOPASSWD: /usr/bin/systemctl, /usr/bin/journalctl
