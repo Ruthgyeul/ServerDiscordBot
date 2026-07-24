@@ -302,13 +302,25 @@ npm test             # unit tests for the config validators (optional)
 ### 4. Register slash commands
 
 ```bash
-npm run deploy       # runs dist/deploy-commands.js (build first)
-# or, without building:
-npm run deploy:dev   # runs the .ts source via tsx
+npm run deploy               # runs dist/deploy-commands.js (build first)
+npm run deploy:dev           # or, without building: the .ts source via tsx
+npm run deploy -- --dry-run  # report what would change, write nothing
+npm run deploy:clear         # remove every registration, register nothing
 ```
 
 With `DISCORD_GUILD_ID` set, commands appear instantly in that server. Without
 it, they register globally (up to ~1h to propagate).
+
+**Stale registrations are cleared automatically.** Publishing is a full
+replacement, so a command renamed or deleted in code disappears from the scope
+it was published to. What that alone does not fix is the _other_ scope: guild
+and global command sets are independent, so setting or clearing
+`DISCORD_GUILD_ID` would otherwise leave the old set behind and show every
+command twice. The deploy script wipes the scope it is not publishing to, then
+registers, and reports exactly what was added and removed.
+
+If a stale entry still appears in the picker after a clean deploy, that is the
+Discord _client's_ own cache — reload it with Ctrl/Cmd+R.
 
 ### 5. Run
 
