@@ -51,6 +51,18 @@ export const config = {
     guildId: process.env.DISCORD_GUILD_ID ?? '',
     alertChannelId: process.env.ALERT_CHANNEL_ID ?? '',
   },
+  // Bot branding & presence. All configurable via .env so the bot's identity
+  // can be changed without touching code. Note: BOT_NAME is the display name
+  // used in embeds, the health-check User-Agent, etc. — the actual Discord
+  // account username is set in the Developer Portal, not here.
+  bot: {
+    name: process.env.BOT_NAME ?? 'ServerDiscordBot',
+    description: process.env.BOT_DESCRIPTION ?? 'Linux host & service management bot',
+    presenceStatus: process.env.BOT_PRESENCE_STATUS ?? 'online',
+    activityType: process.env.BOT_ACTIVITY_TYPE ?? 'Watching',
+    activityText: process.env.BOT_ACTIVITY_TEXT ?? 'the server 🖥️',
+    embedFooter: process.env.BOT_EMBED_FOOTER ?? '',
+  },
   access: {
     adminUserIds: parseList(process.env.ADMIN_USER_IDS),
     adminRoleIds: parseList(process.env.ADMIN_ROLE_IDS),

@@ -32,7 +32,7 @@ export async function checkSite(site) {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
-      headers: { 'User-Agent': 'ServerDiscordBot/1.0 health-check' },
+      headers: { 'User-Agent': `${config.bot.name}/1.0 health-check` },
     });
     const responseMs = Math.round(performance.now() - start);
     const up = res.status === expected;

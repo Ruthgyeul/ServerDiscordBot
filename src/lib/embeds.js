@@ -1,4 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
+import { config } from '../config.js';
 
 /**
  * Shared color palette so every embed the bot sends looks consistent.
@@ -40,5 +41,7 @@ export function errorEmbed(title, description) {
 function baseEmbed(color, title, description) {
   const embed = new EmbedBuilder().setColor(color).setTitle(title).setTimestamp();
   if (description) embed.setDescription(description);
+  // Optional branding footer, configured via BOT_EMBED_FOOTER.
+  if (config.bot.embedFooter) embed.setFooter({ text: config.bot.embedFooter });
   return embed;
 }

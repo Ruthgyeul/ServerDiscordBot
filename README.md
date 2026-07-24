@@ -178,17 +178,28 @@ and error handling are all automatic. The `context` argument gives you
 
 `.env`
 
-| Variable            | Required | Purpose                                   |
-| ------------------- | -------- | ----------------------------------------- |
-| `DISCORD_TOKEN`     | ✅       | Bot token                                 |
-| `DISCORD_CLIENT_ID` | ✅       | Application ID (command registration)     |
-| `DISCORD_GUILD_ID`  |          | Register commands to one guild (instant)  |
-| `ALERT_CHANNEL_ID`  |          | Channel for automated alerts              |
-| `ADMIN_USER_IDS`    |          | Comma-separated admin user IDs            |
-| `ADMIN_ROLE_IDS`    |          | Comma-separated admin role IDs            |
-| `SYSTEMCTL_SUDO`    |          | `true` to prefix systemctl with `sudo -n` |
-| `LOG_LEVEL`         |          | `trace`..`fatal` (default `info`)         |
-| `NODE_ENV`          |          | `production` for JSON logs                |
+| Variable              | Required | Purpose                                               |
+| --------------------- | -------- | ----------------------------------------------------- |
+| `DISCORD_TOKEN`       | ✅       | Bot token                                             |
+| `DISCORD_CLIENT_ID`   | ✅       | Application ID (command registration)                 |
+| `DISCORD_GUILD_ID`    |          | Register commands to one guild (instant)              |
+| `ALERT_CHANNEL_ID`    |          | Channel for automated alerts                          |
+| `ADMIN_USER_IDS`      |          | Comma-separated admin user IDs                        |
+| `ADMIN_ROLE_IDS`      |          | Comma-separated admin role IDs                        |
+| `BOT_NAME`            |          | Display name in embeds / User-Agent                   |
+| `BOT_DESCRIPTION`     |          | One-line description shown in `/help`                 |
+| `BOT_PRESENCE_STATUS` |          | `online` \| `idle` \| `dnd` \| `invisible`            |
+| `BOT_ACTIVITY_TYPE`   |          | `Playing`/`Watching`/`Listening`/`Competing`/`Custom` |
+| `BOT_ACTIVITY_TEXT`   |          | Text after the activity verb                          |
+| `BOT_EMBED_FOOTER`    |          | Optional footer added to every embed                  |
+| `SYSTEMCTL_SUDO`      |          | `true` to prefix systemctl with `sudo -n`             |
+| `LOG_LEVEL`           |          | `trace`..`fatal` (default `info`)                     |
+| `NODE_ENV`            |          | `production` for JSON logs                            |
+
+Bot identity (name, description, presence/activity, embed footer) is fully
+driven by `.env` — see the **Bot branding & presence** block in `.env.example`.
+The bot's actual Discord account username and avatar are set in the Developer
+Portal, not at runtime.
 
 `config/config.json` — `monitor` (interval, cooldown, thresholds), `services`
 (name/label/unit), `websites` (name/label/url/expectStatus/timeoutMs).

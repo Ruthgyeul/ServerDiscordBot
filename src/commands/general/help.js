@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
+import { config } from '../../config.js';
 
 /**
  * List every available command, grouped by category. Reads live from the
@@ -26,8 +27,8 @@ export default {
     }
 
     const embed = infoEmbed(
-      'ServerDiscordBot — Commands',
-      'Commands marked 🔒 require administrator access.',
+      `${config.bot.name} — Commands`,
+      `${config.bot.description}\n\nCommands marked 🔒 require administrator access.`,
     );
 
     for (const [category, lines] of [...byCategory.entries()].sort()) {
