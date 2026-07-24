@@ -48,7 +48,7 @@ export const DEFAULTS = {
     historyHours: 24,
   },
   website: { expectStatus: 200, timeoutMs: 8000, checkCert: true },
-  command: { timeoutMs: 15000, allowArgs: false, sudo: false, confirm: false },
+  command: { timeoutMs: 15000, allowArgs: false, sudo: false, confirm: false, argPattern: '' },
   file: { maxLines: 200 },
 } as const;
 
@@ -323,6 +323,7 @@ export function normalizeCommands(raw: unknown, issues: ConfigIssue[]): RunComma
       allowArgs: readBoolean(source, 'allowArgs', DEFAULTS.command.allowArgs, ctx),
       sudo: readBoolean(source, 'sudo', DEFAULTS.command.sudo, ctx),
       confirm: readBoolean(source, 'confirm', DEFAULTS.command.confirm, ctx),
+      argPattern: readPattern(source, 'argPattern', ctx),
       timeoutMs: readNumber(source, 'timeoutMs', DEFAULTS.command.timeoutMs, ctx, {
         min: 1000,
         max: 120000,
@@ -433,6 +434,27 @@ export function normalizeMonitor(raw: unknown, issues: ConfigIssue[]): MonitorCo
       max: 168,
     }),
   };
+}
+
+/**
+ * Read an optional regular expression, rejecting one that will not compile.
+ *
+ * Dropped rather than kept on failure: a pattern that does not compile cannot
+ * constrain anything, and silently accepting it would turn an intended
+ * restriction into no restriction at all.
+ */
+function readPattern(source: RawConfig, key: string, ctx: EntryContext): string {
+  const value = readString(source, key);
+  if (!value) return '';
+
+  try {
+    new RegExp(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.error(`"${key}" is not a valid regular expression: ${message}`);
+    return '';
+  }
+  return value;
 }
 
 /** Warn about cross-section references that do not resolve. */

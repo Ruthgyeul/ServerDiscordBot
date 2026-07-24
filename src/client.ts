@@ -13,10 +13,17 @@ import type { BotContext } from './types/index.js';
  * We request only the Guilds intent. Slash commands and the monitoring
  * features need nothing more, which keeps the bot's privilege footprint
  * minimal (no message-content or member-list privileged intents required).
+ *
+ * `allowedMentions` is empty on purpose. Much of what this bot echoes back
+ * originates outside it — journal lines, command output, web-server logs —
+ * and none of it should ever be able to make the bot ping a role or a
+ * channel. Embeds do not resolve mentions today, so this guards against the
+ * change that starts using message content without remembering why.
  */
 export async function createClient(): Promise<Client> {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
+    allowedMentions: { parse: [] },
   });
 
   const commands = await loadCommands();

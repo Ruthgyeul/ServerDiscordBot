@@ -39,6 +39,13 @@ const DEDUPE_MS = 5 * 60 * 1000;
 const lastSent = new Map<string, number>();
 
 /**
+ * Cap the dedupe map. Keys are whole messages including stack traces, so a
+ * crash loop that fails differently each time would otherwise grow it without
+ * bound — in a process that is already unhealthy.
+ */
+const MAX_TRACKED = 50;
+
+/**
  * DM the configured owner. Never throws and never blocks a shutdown path.
  *
  * @returns whether a message was actually dispatched.
@@ -56,6 +63,16 @@ export async function notifyOwner(
   if (previous !== undefined && now - previous < DEDUPE_MS) {
     log.debug('suppressed a repeated owner notification');
     return false;
+  }
+  if (lastSent.size >= MAX_TRACKED) {
+    for (const [key, at] of lastSent) {
+      if (now - at >= DEDUPE_MS) lastSent.delete(key);
+    }
+    // Still full of live entries: drop the oldest to make room.
+    if (lastSent.size >= MAX_TRACKED) {
+      const oldest = [...lastSent.entries()].sort((a, b) => a[1] - b[1])[0];
+      if (oldest) lastSent.delete(oldest[0]);
+    }
   }
   lastSent.set(message, now);
 

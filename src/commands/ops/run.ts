@@ -80,7 +80,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
     const argv = [entry.command, ...entry.args].join(' ');
     const flags = [
       entry.sudo ? 'sudo' : null,
-      entry.allowArgs ? 'accepts args' : null,
+      entry.allowArgs ? (entry.argPattern ? `args: \`${entry.argPattern}\`` : 'accepts args') : null,
       entry.confirm ? 'asks first' : null,
     ].filter(Boolean);
     const suffix = flags.length > 0 ? ` · _${flags.join(', ')}_` : '';
@@ -104,11 +104,11 @@ async function handleExec(
 ): Promise<void> {
   const name = interaction.options.getString('name', true);
   const rawArgs = interaction.options.getString('args');
-  const extra = rawArgs ? parseExtraArgs(rawArgs) : [];
 
   // Entries that change something opt into a confirmation step with
   // "confirm": true, so a reload or a deploy cannot be fired by a stray Enter.
   const entry = findCommand(name);
+  const extra = rawArgs ? parseExtraArgs(rawArgs, entry?.argPattern) : [];
   if (entry?.confirm) {
     const preview = [entry.command, ...entry.args, ...extra].join(' ');
     const confirmed = await confirmAction(interaction, {

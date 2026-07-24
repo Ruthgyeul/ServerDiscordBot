@@ -84,8 +84,10 @@ function installProcessHandlers(client: Client): void {
     // The DM is the only channel guaranteed not to depend on the state we
     // just lost, so it is worth a bounded wait before exiting.
     void withTimeout(
-      notifyOwner(client, `Uncaught exception — shutting down:\n${error.stack ?? error.message}`)
-        .then(() => undefined),
+      notifyOwner(
+        client,
+        `Uncaught exception — shutting down:\n${error.stack ?? error.message}`,
+      ).then(() => undefined),
       2000,
     ).finally(() => {
       void client.destroy();

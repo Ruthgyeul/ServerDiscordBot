@@ -30,18 +30,50 @@ export interface RunOutcome {
   durationMs: number;
 }
 
-/** Arguments the caller may not smuggle in even when `allowArgs` is set. */
-const ARG_PATTERN = /^[\w@%+=:,./-]+$/;
+/** Characters an argument may contain at all. Blocks shell metacharacters. */
+const SAFE_CHARS = /^[\w@%+=:,./-]+$/;
 
-/** Split a user-supplied argument string into individual, validated arguments. */
-export function parseExtraArgs(raw: string): string[] {
+/** Caps on caller-supplied arguments, so a pathological input stays cheap. */
+const MAX_ARGS = 8;
+const MAX_ARG_LENGTH = 256;
+
+/**
+ * Split a caller-supplied argument string into individual, validated arguments.
+ *
+ * Two layers, doing different jobs:
+ *
+ *  - `SAFE_CHARS` stops shell metacharacters. Combined with execFile this is
+ *    what makes injection impossible.
+ *  - `argPattern`, when the entry sets one, constrains what the arguments may
+ *    *mean*. That is a separate problem: `/etc/shadow` contains no dangerous
+ *    characters at all, and passing it to a command that reads files would
+ *    walk straight around the `files` allowlist.
+ *
+ * @param argPattern Optional anchored expression from the entry's config.
+ */
+export function parseExtraArgs(raw: string, argPattern = ''): string[] {
   const parts = raw.trim().split(/\s+/).filter(Boolean);
 
+  if (parts.length > MAX_ARGS) {
+    throw new Error(`Too many arguments (${parts.length}); at most ${MAX_ARGS} are accepted.`);
+  }
+
+  const constraint = argPattern ? new RegExp(argPattern) : null;
+
   for (const part of parts) {
-    if (!ARG_PATTERN.test(part)) {
+    if (part.length > MAX_ARG_LENGTH) {
+      throw new Error(`Argument is too long (limit ${MAX_ARG_LENGTH} characters).`);
+    }
+    if (!SAFE_CHARS.test(part)) {
       throw new Error(
         `Argument "${part}" contains characters that are not allowed. ` +
           'Use letters, digits and . _ - / : , = + % @ only.',
+      );
+    }
+    if (constraint && !constraint.test(part)) {
+      throw new Error(
+        `Argument "${part}" is not permitted for this command ` +
+          `(must match \`${argPattern}\`).`,
       );
     }
   }
@@ -70,6 +102,9 @@ export async function runCommand(
         'Set "allowArgs": true for it in config.json to permit them.',
     );
   }
+  // Re-validate here rather than trusting the caller to have done it. This
+  // function is the security boundary; the command layer is convenience.
+  if (extra.length > 0) parseExtraArgs(extra.join(' '), entry.argPattern);
 
   const commandArgs = [...entry.args, ...extra];
   const invocation = entry.sudo

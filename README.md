@@ -437,6 +437,63 @@ build. The suite covers the config validators and argument parsing — the code
 where a mistake widens an allowlist — rather than chasing coverage of the
 Discord plumbing, which is better verified by running the bot.
 
+## Security model
+
+What the boundaries actually are, and where they stop.
+
+**Host commands never touch a shell.** Everything runs through `execFile` with
+an explicit argv, so quoting, `;`, `&&`, backticks and globs have no special
+meaning and cannot escape into a second command.
+
+**Config is the allowlist.** The bot will not run `systemctl` against a unit,
+execute a binary, or read a path that is not listed in `config.json`. Discord
+users select a _key_; they never supply a unit name, argv or path.
+
+**Commands are guild-only**, applied centrally in the command loader. The
+public commands (`/status`, `/sites`) report the hostname, distro, kernel, disk
+layout and every hosted URL, and a DM has no member to run the admin check
+against.
+
+**Untrusted output is escaped.** Journal lines, command stdout and web-server
+logs are echoed into Discord. A web log contains request paths and user-agents
+supplied verbatim by whoever made the request, so a stranger can put ``` into
+one; code blocks escape their content, and the client resolves no mentions at
+all.
+
+### Where you can still shoot yourself
+
+These are configuration decisions the bot cannot make for you:
+
+- **`allowArgs`** lets a caller append arguments. The character check stops
+  shell injection, but not _argument_ injection — `/etc/shadow` contains no
+  dangerous characters, so `allowArgs` on a command that reads files walks
+  around the `files` allowlist entirely. Use **`argPattern`** to constrain what
+  the arguments may mean:
+
+  ```json
+  {
+    "name": "tail-syslog",
+    "command": "tail",
+    "args": ["-n", "50", "/var/log/syslog"],
+    "allowArgs": true,
+    "argPattern": "^[0-9]{1,4}$"
+  }
+  ```
+
+  Arguments are additionally capped at 8 per call and 256 characters each.
+
+- **`"sudo": true`** grants whatever the sudoers rule grants. Scope rules to a
+  single binary, and prefer per-unit `systemctl` entries over a blanket rule.
+
+- **`files` entries are followed, symlinks included.** The bot reads with its
+  own permissions, so an allowlisted path pointing somewhere sensitive is
+  readable. List real paths.
+
+- **Admin is your list, not Discord's.** `ADMIN_USER_IDS` / `ADMIN_ROLE_IDS`
+  are deliberately independent of Discord's Administrator permission, so bot
+  control can be delegated without granting server-wide power — and equally,
+  a Discord admin who is not on your list has no bot access.
+
 ## Rate limiting
 
 Commands that touch the host declare a per-user cooldown (`cooldownSeconds` on

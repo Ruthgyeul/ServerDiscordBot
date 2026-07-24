@@ -30,6 +30,26 @@ describe('parseExtraArgs', () => {
     }
   });
 
+  test('constrains argument meaning when the entry sets a pattern', () => {
+    // The charset check passes /etc/shadow happily — it contains nothing
+    // dangerous. Only an entry-level pattern can say "a line count, not a path".
+    assert.deepEqual(parseExtraArgs('50', '^[0-9]{1,4}$'), ['50']);
+    assert.throws(() => parseExtraArgs('/etc/shadow', '^[0-9]{1,4}$'), /not permitted/);
+    assert.throws(() => parseExtraArgs('-rf', '^[0-9]{1,4}$'), /not permitted/);
+  });
+
+  test('applies the pattern to every argument, not just the first', () => {
+    assert.throws(() => parseExtraArgs('10 /etc/passwd', '^[0-9]{1,4}$'), /not permitted/);
+  });
+
+  test('caps the number of arguments', () => {
+    assert.throws(() => parseExtraArgs('a b c d e f g h i j'), /Too many/);
+  });
+
+  test('caps argument length', () => {
+    assert.throws(() => parseExtraArgs('x'.repeat(300)), /too long/);
+  });
+
   test('rejects newline smuggling', () => {
     // Split on \s+ makes this two arguments rather than one, but the second
     // must still be rejected on its own merits.

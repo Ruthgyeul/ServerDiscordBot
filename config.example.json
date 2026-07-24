@@ -92,7 +92,8 @@
       "description": "Running containers and their status",
       "command": "docker",
       "args": ["ps", "--format", "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"],
-      "timeoutMs": 20000
+      "timeoutMs": 20000,
+      "allowArgs": false
     },
     {
       "name": "cert-expiry",
@@ -111,6 +112,15 @@
       "args": ["reload", "nginx.service"],
       "sudo": true,
       "confirm": true
+    },
+    {
+      "name": "tail-syslog",
+      "label": "Tail syslog",
+      "description": "Last N lines of the system log; N is constrained by argPattern",
+      "command": "tail",
+      "args": ["-n", "50", "/var/log/syslog"],
+      "allowArgs": true,
+      "argPattern": "^[0-9]{1,4}$"
     }
   ],
   "files": [

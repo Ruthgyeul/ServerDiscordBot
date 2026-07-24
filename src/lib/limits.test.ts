@@ -69,6 +69,24 @@ describe('codeBlock', () => {
     assert.equal(codeBlock('hello', 100), '```\nhello\n```');
   });
 
+  test('neutralises a fence break from untrusted log content', () => {
+    // nginx writes the request path verbatim, so this is reachable by anyone
+    // who can send an HTTP request to the host.
+    const hostile = 'GET /```\n**INJECTED** HTTP/1.1';
+    const out = codeBlock(hostile);
+
+    // Exactly one opening and one closing fence: nothing escaped the block.
+    assert.equal(out.split('```').length, 3);
+    assert.ok(out.startsWith('```\n') && out.endsWith('\n```'));
+  });
+
+  test('stays inside the limit even when escaping grows the text', () => {
+    // Escaping adds a backslash per backtick, so a backtick-heavy input is
+    // longer after escaping than before — the bound must still hold.
+    const out = codeBlock('`'.repeat(9000), DiscordLimits.embedDescription);
+    assert.ok(out.length <= DiscordLimits.embedDescription, `was ${out.length}`);
+  });
+
   test('counts the fences against the limit', () => {
     const out = codeBlock('x'.repeat(5000), DiscordLimits.embedDescription);
     assert.ok(
