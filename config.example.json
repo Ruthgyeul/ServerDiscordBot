@@ -21,6 +21,7 @@
     "ignoreMounts": ["/boot", "/boot/efi", "/snap"],
     "historyHours": 24
   },
+
   "services": [
     {
       "name": "nginx",
@@ -30,39 +31,41 @@
       "critical": true
     },
     {
-      "name": "portfolio",
-      "label": "Portfolio",
-      "unit": "portfolio.service",
-      "description": "ruthgyeul.xyz portfolio app",
+      "name": "web",
+      "label": "Main site",
+      "unit": "web.service",
+      "description": "Front-end application behind the proxy",
       "critical": true
     },
     {
-      "name": "status",
-      "label": "Status page",
-      "unit": "status.service",
-      "description": "status.ruthgyeul.xyz"
+      "name": "api",
+      "label": "API",
+      "unit": "api.service",
+      "description": "Backend service"
     }
   ],
+
   "websites": [
     {
-      "name": "portfolio",
-      "label": "Portfolio",
-      "url": "https://ruthgyeul.xyz",
+      "name": "main",
+      "label": "Main site",
+      "url": "https://example.com",
       "expectStatus": 200,
       "timeoutMs": 8000,
       "checkCert": true,
-      "service": "portfolio"
+      "service": "web"
     },
     {
-      "name": "status",
-      "label": "Status page",
-      "url": "https://status.ruthgyeul.xyz",
+      "name": "api",
+      "label": "API health",
+      "url": "https://api.example.com/health",
       "expectStatus": 200,
       "timeoutMs": 8000,
       "checkCert": true,
-      "service": "status"
+      "service": "api"
     }
   ],
+
   "commands": [
     {
       "name": "disk",
@@ -87,24 +90,6 @@
       "sudo": true
     },
     {
-      "name": "docker-ps",
-      "label": "Docker containers",
-      "description": "Running containers and their status",
-      "command": "docker",
-      "args": ["ps", "--format", "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"],
-      "timeoutMs": 20000,
-      "allowArgs": false
-    },
-    {
-      "name": "cert-expiry",
-      "label": "Certbot certificates",
-      "description": "Certificate inventory and renewal dates",
-      "command": "certbot",
-      "args": ["certificates"],
-      "sudo": true,
-      "timeoutMs": 30000
-    },
-    {
       "name": "nginx-reload",
       "label": "Reload nginx",
       "description": "Apply a new nginx config without dropping connections",
@@ -114,15 +99,24 @@
       "confirm": true
     },
     {
+      "name": "docker-ps",
+      "label": "Docker containers",
+      "description": "Running containers and their status",
+      "command": "docker",
+      "args": ["ps", "--format", "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"],
+      "timeoutMs": 20000
+    },
+    {
       "name": "tail-syslog",
       "label": "Tail syslog",
-      "description": "Last N lines of the system log; N is constrained by argPattern",
+      "description": "Last N lines of the system log. argPattern constrains N to a number, so allowing arguments cannot turn this into a request for an arbitrary file.",
       "command": "tail",
       "args": ["-n", "50", "/var/log/syslog"],
       "allowArgs": true,
       "argPattern": "^[0-9]{1,4}$"
     }
   ],
+
   "files": [
     {
       "name": "nginx-error",
@@ -138,5 +132,6 @@
       "maxLines": 200
     }
   ],
+
   "disabledCommands": []
 }

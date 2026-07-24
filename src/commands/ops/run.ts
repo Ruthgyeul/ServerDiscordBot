@@ -80,7 +80,11 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
     const argv = [entry.command, ...entry.args].join(' ');
     const flags = [
       entry.sudo ? 'sudo' : null,
-      entry.allowArgs ? (entry.argPattern ? `args: \`${entry.argPattern}\`` : 'accepts args') : null,
+      entry.allowArgs
+        ? entry.argPattern
+          ? `args: \`${entry.argPattern}\``
+          : 'accepts args'
+        : null,
       entry.confirm ? 'asks first' : null,
     ].filter(Boolean);
     const suffix = flags.length > 0 ? ` · _${flags.join(', ')}_` : '';
