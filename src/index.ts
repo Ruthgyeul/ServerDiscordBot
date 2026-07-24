@@ -1,5 +1,5 @@
 import type { Client } from 'discord.js';
-import { assertBootConfig, config } from './config.js';
+import { assertBootConfig, config, configIssues } from './config/index.js';
 import { logger } from './logger.js';
 import { createClient } from './client.js';
 
@@ -10,6 +10,18 @@ import { createClient } from './client.js';
  */
 async function main(): Promise<void> {
   assertBootConfig();
+  reportConfigIssues();
+
+  logger.info(
+    {
+      configPath: config.configPath,
+      services: config.services.length,
+      websites: config.websites.length,
+      commands: config.commands.length,
+      files: config.files.length,
+    },
+    'configuration loaded',
+  );
 
   const client = await createClient();
 
@@ -19,8 +31,27 @@ async function main(): Promise<void> {
 }
 
 /**
- * Wire OS signals and unexpected-error events to a clean shutdown so systemd
- * sees a well-behaved service (fast, deterministic stop; proper exit codes).
+ * Log everything the config loader flagged.
+ *
+ * Invalid inventory entries are dropped rather than fatal, so this is the one
+ * place an operator learns that a website or service silently did not load.
+ * The same list is available in Discord via `/config issues`.
+ */
+function reportConfigIssues(): void {
+  for (const issue of configIssues) {
+    const line = `${issue.scope}: ${issue.message}`;
+    if (issue.level === 'error') {
+      logger.error({ scope: issue.scope }, `config error — ${line}`);
+    } else {
+      logger.warn({ scope: issue.scope }, `config warning — ${line}`);
+    }
+  }
+}
+
+/**
+ * Wire OS signals and unexpected-error events to a clean shutdown so the
+ * supervisor sees a well-behaved service (fast, deterministic stop; proper
+ * exit codes).
  */
 function installProcessHandlers(client: Client): void {
   const shutdown = (signal: string): void => {

@@ -1,7 +1,7 @@
 {
   "name": "server-discord-bot",
   "version": "1.0.0",
-  "description": "Discord bot for managing a Linux host, its systemd services, and hosted websites.",
+  "description": "Discord bot for managing a Linux host: systemd services, hosted websites, allowlisted commands and files, with config-driven monitoring and alerts.",
   "type": "module",
   "main": "dist/index.js",
   "engines": {

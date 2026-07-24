@@ -1,6 +1,7 @@
 import {
   Events,
   MessageFlags,
+  type AutocompleteInteraction,
   type ChatInputCommandInteraction,
   type Interaction,
   type InteractionReplyOptions,
@@ -23,6 +24,10 @@ const event: EventModule = {
     const interaction = args[0] as Interaction;
     const context = args[1] as BotContext;
 
+    if (interaction.isAutocomplete()) {
+      await handleAutocomplete(interaction, context);
+      return;
+    }
     if (!interaction.isChatInputCommand()) return;
 
     const command = context.commands.get(interaction.commandName);
@@ -64,6 +69,37 @@ const event: EventModule = {
 };
 
 export default event;
+
+/**
+ * Serve option autocomplete.
+ *
+ * Autocomplete is enforced separately from execution: the suggestions for
+ * admin-only commands reveal the server's inventory, so non-admins get an
+ * empty list rather than a preview of what exists.
+ */
+async function handleAutocomplete(
+  interaction: AutocompleteInteraction,
+  context: BotContext,
+): Promise<void> {
+  const command = context.commands.get(interaction.commandName);
+  if (!command?.autocomplete) return;
+
+  const required = command.permission ?? Permission.ADMIN;
+  if (!hasPermission(interaction, required)) {
+    await interaction.respond([]);
+    return;
+  }
+
+  try {
+    await command.autocomplete(interaction, context);
+  } catch (rawError) {
+    // Autocomplete has no user-visible error channel; log and answer empty so
+    // the client does not hang on a pending response.
+    const message = rawError instanceof Error ? rawError.message : String(rawError);
+    log.warn({ command: interaction.commandName, err: message }, 'autocomplete failed');
+    if (!interaction.responded) await interaction.respond([]).catch(() => undefined);
+  }
+}
 
 /**
  * Report an execution error back to the user, respecting whether the

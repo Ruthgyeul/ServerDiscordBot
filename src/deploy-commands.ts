@@ -1,5 +1,5 @@
 import { REST, Routes, type RESTPostAPIApplicationCommandsJSONBody } from 'discord.js';
-import { config, assertBootConfig } from './config.js';
+import { config, assertBootConfig } from './config/index.js';
 import { logger } from './logger.js';
 import { loadCommands } from './handlers/commandLoader.js';
 

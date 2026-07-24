@@ -1,5 +1,5 @@
 import { run } from '../lib/shell.js';
-import { findService, config } from '../config.js';
+import { findService, config } from '../config/index.js';
 import { childLogger } from '../logger.js';
 import type { ServiceConfig } from '../types.js';
 
@@ -23,13 +23,6 @@ const MUTATING_ACTIONS = new Set<ServiceAction>([
   ServiceAction.RESTART,
 ]);
 
-/**
- * Whether to prefix systemctl with `sudo -n`. Enable when the bot runs as a
- * non-root user that has a narrowly-scoped sudoers rule (see README). When the
- * unit files are user units or the bot runs as root, leave this off.
- */
-const USE_SUDO = process.env.SYSTEMCTL_SUDO === 'true';
-
 export interface ControlResult {
   service: ServiceConfig;
   action: ServiceAction;
@@ -46,12 +39,27 @@ export interface ServiceStatus {
   error?: string;
 }
 
-/** Build the argv for a systemctl invocation, resolving sudo prefixing. */
-function buildInvocation(systemctlArgs: string[]): { file: string; args: string[] } {
-  if (USE_SUDO) {
-    return { file: 'sudo', args: ['-n', 'systemctl', ...systemctlArgs] };
+/**
+ * Build the argv for a systemctl/journalctl invocation.
+ *
+ * Both host-access decisions live in config (`SYSTEMCTL_SUDO`,
+ * `SYSTEMCTL_SCOPE`) and are read per call, so switching between root, a
+ * sudoers-scoped bot user, or `--user` units is an `.env` change:
+ *
+ *   sudo -n systemctl --user <args>
+ */
+function buildInvocation(
+  tool: 'systemctl' | 'journalctl',
+  toolArgs: string[],
+): {
+  file: string;
+  args: string[];
+} {
+  const scoped = config.system.scope === 'user' ? ['--user', ...toolArgs] : toolArgs;
+  if (config.system.useSudo) {
+    return { file: 'sudo', args: ['-n', tool, ...scoped] };
   }
-  return { file: 'systemctl', args: systemctlArgs };
+  return { file: tool, args: scoped };
 }
 
 /**
@@ -74,7 +82,7 @@ export async function controlService(
   }
 
   const isMutating = MUTATING_ACTIONS.has(action);
-  const { file, args } = buildInvocation([action, service.unit]);
+  const { file, args } = buildInvocation('systemctl', [action, service.unit]);
 
   log.info({ service: service.name, unit: service.unit, action }, 'systemctl action');
 
@@ -82,7 +90,9 @@ export async function controlService(
     // Read-only status calls exit non-zero when a unit is inactive; we handle
     // that in getStatus. For mutating calls, a longer timeout accommodates
     // services that are slow to stop/start.
-    timeoutMs: isMutating ? 30000 : 15000,
+    timeoutMs: isMutating
+      ? config.system.commandTimeoutMs * 2
+      : config.system.commandTimeoutMs,
   });
 
   return { service, action, output: (stdout + stderr).trim() };
@@ -100,7 +110,7 @@ export async function getStatus(name: string): Promise<ServiceStatus> {
   }
 
   const props = 'ActiveState,SubState,LoadState,ActiveEnterTimestamp';
-  const { file, args } = buildInvocation([
+  const { file, args } = buildInvocation('systemctl', [
     'show',
     service.unit,
     `--property=${props}`,
@@ -154,8 +164,13 @@ function parseKeyValue(text: string): Record<string, string> {
   return out;
 }
 
-/** Read the last N journal lines for a managed service via `journalctl`. */
-export async function getLogs(name: string, lines = 30): Promise<string> {
+/**
+ * Read the last N journal lines for a managed service via `journalctl`.
+ *
+ * @param lines    Line count, clamped to 1–100 so a reply always fits Discord.
+ * @param priority Optional syslog priority ceiling (e.g. "err" for errors only).
+ */
+export async function getLogs(name: string, lines = 30, priority?: string): Promise<string> {
   const service = findService(name);
   if (!service) {
     throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
@@ -171,10 +186,9 @@ export async function getLogs(name: string, lines = 30): Promise<string> {
     '--output',
     'short-iso',
   ];
-  const { file, args } = USE_SUDO
-    ? { file: 'sudo', args: ['-n', 'journalctl', ...journalArgs] }
-    : { file: 'journalctl', args: journalArgs };
+  if (priority) journalArgs.push('--priority', priority);
 
+  const { file, args } = buildInvocation('journalctl', journalArgs);
   const { stdout } = await run(file, args);
   return stdout.trim() || '(no log output)';
 }
