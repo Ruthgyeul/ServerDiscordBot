@@ -70,6 +70,9 @@ web_modules/
 .env.*
 !.env.example
 
+# Deployment-specific config (services/websites/thresholds). Keep the example.
+config/config.json
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
