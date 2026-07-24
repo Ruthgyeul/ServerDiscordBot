@@ -1,6 +1,7 @@
 import { run } from '../lib/shell.js';
 import { findService, config } from '../config.js';
 import { childLogger } from '../logger.js';
+import type { ServiceConfig } from '../types.js';
 
 const log = childLogger('serviceManager');
 
@@ -8,16 +9,15 @@ const log = childLogger('serviceManager');
  * Actions that may be performed on a managed systemd unit.
  * `start`, `stop` and `restart` change state and are privileged.
  * `status` is read-only.
- * @readonly
  */
-export const ServiceAction = Object.freeze({
-  START: 'start',
-  STOP: 'stop',
-  RESTART: 'restart',
-  STATUS: 'status',
-});
+export enum ServiceAction {
+  START = 'start',
+  STOP = 'stop',
+  RESTART = 'restart',
+  STATUS = 'status',
+}
 
-const MUTATING_ACTIONS = new Set([
+const MUTATING_ACTIONS = new Set<ServiceAction>([
   ServiceAction.START,
   ServiceAction.STOP,
   ServiceAction.RESTART,
@@ -30,12 +30,24 @@ const MUTATING_ACTIONS = new Set([
  */
 const USE_SUDO = process.env.SYSTEMCTL_SUDO === 'true';
 
-/**
- * Build the argv for a systemctl invocation, resolving sudo prefixing.
- * @param {string[]} systemctlArgs
- * @returns {{ file: string, args: string[] }}
- */
-function buildInvocation(systemctlArgs) {
+export interface ControlResult {
+  service: ServiceConfig;
+  action: ServiceAction;
+  output: string;
+}
+
+export interface ServiceStatus {
+  service: ServiceConfig;
+  activeState: string;
+  subState: string;
+  loadState: string;
+  running: boolean;
+  since: string | null;
+  error?: string;
+}
+
+/** Build the argv for a systemctl invocation, resolving sudo prefixing. */
+function buildInvocation(systemctlArgs: string[]): { file: string; args: string[] } {
   if (USE_SUDO) {
     return { file: 'sudo', args: ['-n', 'systemctl', ...systemctlArgs] };
   }
@@ -48,12 +60,11 @@ function buildInvocation(systemctlArgs) {
  * The service MUST exist in config (the allowlist). We never pass an arbitrary
  * unit name to systemctl — only the pre-approved `unit` string from config —
  * which is what makes remote service control safe to expose over Discord.
- *
- * @param {string} name - Short service name from config.
- * @param {string} action - A {@link ServiceAction} value.
- * @returns {Promise<{ service: object, action: string, output: string }>}
  */
-export async function controlService(name, action) {
+export async function controlService(
+  name: string,
+  action: ServiceAction,
+): Promise<ControlResult> {
   const service = findService(name);
   if (!service) {
     throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
@@ -78,21 +89,11 @@ export async function controlService(name, action) {
 }
 
 /**
- * Get a compact status object for a managed service using
- * `systemctl show`, which is script-friendly (key=value) and never fails
- * just because a unit is inactive.
- *
- * @param {string} name - Short service name from config.
- * @returns {Promise<{
- *   service: object,
- *   activeState: string,
- *   subState: string,
- *   loadState: string,
- *   running: boolean,
- *   since: string | null,
- * }>}
+ * Get a compact status object for a managed service using `systemctl show`,
+ * which is script-friendly (key=value) and never fails just because a unit is
+ * inactive.
  */
-export async function getStatus(name) {
+export async function getStatus(name: string): Promise<ServiceStatus> {
   const service = findService(name);
   if (!service) {
     throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
@@ -119,37 +120,32 @@ export async function getStatus(name) {
   };
 }
 
-/**
- * Fetch the status of every managed service concurrently.
- * @returns {Promise<Array<{ service: object, running: boolean, activeState: string, subState: string, error?: string }>>}
- */
-export async function getAllStatuses() {
+/** Fetch the status of every managed service concurrently. */
+export async function getAllStatuses(): Promise<ServiceStatus[]> {
   return Promise.all(
-    config.services.map(async (service) => {
+    config.services.map(async (service): Promise<ServiceStatus> => {
       try {
-        const status = await getStatus(service.name);
-        return status;
-      } catch (error) {
-        log.warn({ service: service.name, err: error.message }, 'status lookup failed');
+        return await getStatus(service.name);
+      } catch (rawError) {
+        const message = rawError instanceof Error ? rawError.message : String(rawError);
+        log.warn({ service: service.name, err: message }, 'status lookup failed');
         return {
           service,
           running: false,
           activeState: 'error',
-          subState: error.message,
-          error: error.message,
+          subState: message,
+          loadState: 'error',
+          since: null,
+          error: message,
         };
       }
     }),
   );
 }
 
-/**
- * Parse `key=value` lines (as emitted by `systemctl show`) into an object.
- * @param {string} text
- * @returns {Record<string, string>}
- */
-function parseKeyValue(text) {
-  const out = {};
+/** Parse `key=value` lines (as emitted by `systemctl show`) into an object. */
+function parseKeyValue(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const line of text.split('\n')) {
     const idx = line.indexOf('=');
     if (idx === -1) continue;
@@ -158,13 +154,8 @@ function parseKeyValue(text) {
   return out;
 }
 
-/**
- * Read the last N journal lines for a managed service via `journalctl`.
- * @param {string} name - Short service name from config.
- * @param {number} [lines=30]
- * @returns {Promise<string>}
- */
-export async function getLogs(name, lines = 30) {
+/** Read the last N journal lines for a managed service via `journalctl`. */
+export async function getLogs(name: string, lines = 30): Promise<string> {
   const service = findService(name);
   if (!service) {
     throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);

@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "description": "Discord bot for managing a Linux host, its systemd services, and hosted websites.",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "deploy": "node src/deploy-commands.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "deploy": "node dist/deploy-commands.js",
+    "deploy:dev": "tsx src/deploy-commands.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."
@@ -24,9 +27,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
+    "@types/node": "^22.9.0",
     "eslint": "^9.15.0",
     "globals": "^15.12.0",
-    "prettier": "^3.3.3"
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.15.0"
   },
   "license": "MIT"
 }

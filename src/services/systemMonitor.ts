@@ -6,30 +6,32 @@ import si from 'systeminformation';
  * us out of fragile hand-rolled shell parsing.
  */
 
-/**
- * @typedef {object} SystemSnapshot
- * @property {number} cpuPercent   Overall CPU load (0..100).
- * @property {number} loadAvg1     1-minute load average.
- * @property {number} memPercent   Used memory as a percentage (0..100).
- * @property {number} memUsed      Used memory in bytes (active).
- * @property {number} memTotal     Total memory in bytes.
- * @property {number} uptime       System uptime in seconds.
- * @property {DiskUsage[]} disks    Per-filesystem usage.
- */
+export interface DiskUsage {
+  mount: string;
+  usePercent: number;
+  used: number; // bytes
+  size: number; // bytes
+}
 
-/**
- * @typedef {object} DiskUsage
- * @property {string} mount   Mount point (e.g. "/").
- * @property {number} usePercent
- * @property {number} used    bytes
- * @property {number} size    bytes
- */
+export interface SystemSnapshot {
+  cpuPercent: number;
+  loadAvg1: number;
+  memPercent: number;
+  memUsed: number; // bytes
+  memTotal: number; // bytes
+  uptime: number; // seconds
+  disks: DiskUsage[];
+}
 
-/**
- * Gather a full snapshot of host metrics in one call.
- * @returns {Promise<SystemSnapshot>}
- */
-export async function getSnapshot() {
+export interface HostInfo {
+  hostname: string;
+  platform: string;
+  distro: string;
+  kernel: string;
+}
+
+/** Gather a full snapshot of host metrics in one call. */
+export async function getSnapshot(): Promise<SystemSnapshot> {
   const [load, mem, time, fsSize] = await Promise.all([
     si.currentLoad(),
     si.mem(),
@@ -42,7 +44,7 @@ export async function getSnapshot() {
   const memUsed = mem.active;
   const memPercent = (memUsed / mem.total) * 100;
 
-  const disks = fsSize
+  const disks: DiskUsage[] = fsSize
     // Ignore pseudo/virtual filesystems that report 0 size.
     .filter((fs) => fs.size > 0 && fs.mount)
     .map((fs) => ({
@@ -63,11 +65,8 @@ export async function getSnapshot() {
   };
 }
 
-/**
- * Static host identity information, useful for the status header.
- * @returns {Promise<{ hostname: string, platform: string, distro: string, kernel: string }>}
- */
-export async function getHostInfo() {
+/** Static host identity information, useful for the status header. */
+export async function getHostInfo(): Promise<HostInfo> {
   const os = await si.osInfo();
   return {
     hostname: os.hostname,

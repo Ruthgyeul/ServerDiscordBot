@@ -20,7 +20,8 @@ Type=simple
 User=botuser
 Group=botuser
 WorkingDirectory=/opt/serverdiscordbot
-ExecStart=/usr/bin/node src/index.js
+# Runs the compiled output. Build first with `npm ci && npm run build`.
+ExecStart=/usr/bin/node dist/index.js
 EnvironmentFile=/opt/serverdiscordbot/.env
 
 # Reliability: restart on failure with a small backoff.

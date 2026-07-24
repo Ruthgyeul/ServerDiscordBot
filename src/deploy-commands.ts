@@ -1,4 +1,4 @@
-import { REST, Routes } from 'discord.js';
+import { REST, Routes, type RESTPostAPIApplicationCommandsJSONBody } from 'discord.js';
 import { config, assertBootConfig } from './config.js';
 import { logger } from './logger.js';
 import { loadCommands } from './handlers/commandLoader.js';
@@ -7,17 +7,19 @@ import { loadCommands } from './handlers/commandLoader.js';
  * Register (publish) slash commands with Discord.
  *
  * Run this whenever commands are added or their `data` definitions change:
- *   npm run deploy
+ *   npm run deploy       (compiled)  ·  npm run deploy:dev  (tsx)
  *
  * If DISCORD_GUILD_ID is set, commands register to that guild and appear
  * instantly — ideal for development. Otherwise they register globally and can
  * take up to an hour to propagate.
  */
-async function deploy() {
+async function deploy(): Promise<void> {
   assertBootConfig();
 
   const commands = await loadCommands();
-  const body = commands.map((command) => command.data.toJSON());
+  const body: RESTPostAPIApplicationCommandsJSONBody[] = commands.map((command) =>
+    command.data.toJSON(),
+  );
 
   const rest = new REST().setToken(config.discord.token);
 
@@ -30,11 +32,13 @@ async function deploy() {
     'registering slash commands',
   );
 
-  const data = await rest.put(route, { body });
+  const data = (await rest.put(route, { body })) as unknown[];
   logger.info({ count: data.length }, 'slash commands registered');
 }
 
-deploy().catch((error) => {
-  logger.fatal({ err: error.message, stack: error.stack }, 'failed to deploy commands');
+deploy().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  logger.fatal({ err: message, stack }, 'failed to deploy commands');
   process.exit(1);
 });

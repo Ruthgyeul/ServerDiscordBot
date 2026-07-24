@@ -1,3 +1,4 @@
+import type { Client } from 'discord.js';
 import { assertBootConfig, config } from './config.js';
 import { logger } from './logger.js';
 import { createClient } from './client.js';
@@ -7,7 +8,7 @@ import { createClient } from './client.js';
  * Validates configuration, builds the client, logs in, and installs
  * graceful-shutdown and last-resort error handlers.
  */
-async function main() {
+async function main(): Promise<void> {
   assertBootConfig();
 
   const client = await createClient();
@@ -20,12 +21,11 @@ async function main() {
 /**
  * Wire OS signals and unexpected-error events to a clean shutdown so systemd
  * sees a well-behaved service (fast, deterministic stop; proper exit codes).
- * @param {import('discord.js').Client} client
  */
-function installProcessHandlers(client) {
-  const shutdown = (signal) => {
+function installProcessHandlers(client: Client): void {
+  const shutdown = (signal: string): void => {
     logger.info({ signal }, 'shutting down');
-    client.destroy();
+    void client.destroy();
     process.exit(0);
   };
 
@@ -35,14 +35,16 @@ function installProcessHandlers(client) {
   process.on('unhandledRejection', (reason) => {
     logger.error({ reason: String(reason) }, 'unhandled promise rejection');
   });
-  process.on('uncaughtException', (error) => {
+  process.on('uncaughtException', (error: Error) => {
     logger.fatal({ err: error.message, stack: error.stack }, 'uncaught exception');
-    client.destroy();
+    void client.destroy();
     process.exit(1);
   });
 }
 
-main().catch((error) => {
-  logger.fatal({ err: error.message, stack: error.stack }, 'fatal error during startup');
+main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  logger.fatal({ err: message, stack }, 'fatal error during startup');
   process.exit(1);
 });

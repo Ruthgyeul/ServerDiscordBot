@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import type { WebsiteConfig } from '../types.js';
 
 /**
  * Lightweight HTTP health checker for the websites hosted on this server.
@@ -6,21 +7,16 @@ import { config } from '../config.js';
  * hung endpoint can never stall the monitor loop.
  */
 
-/**
- * @typedef {object} WebResult
- * @property {object} site        The configured website entry.
- * @property {boolean} up         Whether the check passed.
- * @property {number | null} status  HTTP status code, or null on network error.
- * @property {number} responseMs  Round-trip time in milliseconds.
- * @property {string | null} error   Error message when the check failed.
- */
+export interface WebResult {
+  site: WebsiteConfig;
+  up: boolean;
+  status: number | null;
+  responseMs: number;
+  error: string | null;
+}
 
-/**
- * Perform a single health check against one configured website.
- * @param {object} site - Entry from config.websites.
- * @returns {Promise<WebResult>}
- */
-export async function checkSite(site) {
+/** Perform a single health check against one configured website. */
+export async function checkSite(site: WebsiteConfig): Promise<WebResult> {
   const timeout = site.timeoutMs ?? 8000;
   const expected = site.expectStatus ?? 200;
   const controller = new AbortController();
@@ -32,7 +28,7 @@ export async function checkSite(site) {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
-      headers: { 'User-Agent': 'ServerDiscordBot/1.0 health-check' },
+      headers: { 'User-Agent': `${config.bot.name}/1.0 health-check` },
     });
     const responseMs = Math.round(performance.now() - start);
     const up = res.status === expected;
@@ -43,8 +39,9 @@ export async function checkSite(site) {
       responseMs,
       error: up ? null : `Expected ${expected}, got ${res.status}`,
     };
-  } catch (error) {
+  } catch (rawError) {
     const responseMs = Math.round(performance.now() - start);
+    const error = rawError as Error;
     const reason =
       error.name === 'AbortError' ? `Timed out after ${timeout}ms` : error.message;
     return { site, up: false, status: null, responseMs, error: reason };
@@ -53,10 +50,7 @@ export async function checkSite(site) {
   }
 }
 
-/**
- * Check every configured website concurrently.
- * @returns {Promise<WebResult[]>}
- */
-export async function checkAllSites() {
+/** Check every configured website concurrently. */
+export async function checkAllSites(): Promise<WebResult[]> {
   return Promise.all(config.websites.map((site) => checkSite(site)));
 }
