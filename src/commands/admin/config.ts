@@ -7,7 +7,9 @@ import { Permission } from '../../lib/permissions.js';
 import { config, configIssues, reloadConfig } from '../../config/index.js';
 import { infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
 import { truncate } from '../../lib/format.js';
+import { metricsHistory } from '../../services/metricsHistory.js';
 import { childLogger } from '../../logger.js';
+import { recordAudit } from '../../services/audit.js';
 import type { BotContext, CommandModule, ConfigIssue } from '../../types.js';
 
 const log = childLogger('command:config');
@@ -16,7 +18,7 @@ const log = childLogger('command:config');
  * `/config` — inspect and hot-reload the bot's configuration.
  *
  * This is the command that makes the whole config story usable day to day:
- * edit `.env` or `config/config.json` on the server, run `/config reload`, and
+ * edit `.env` or `config.json` on the server, run `/config reload`, and
  * the new inventory, thresholds and branding take effect without a restart.
  * Always ephemeral — the output describes the server's internals.
  */
@@ -72,6 +74,7 @@ async function handleShow(interaction: ChatInputCommandInteraction): Promise<voi
         `Admin users: ${access.adminUserIds.length}`,
         `Admin roles: ${access.adminRoleIds.length}`,
         `Alert channel: ${discord.alertChannelId ? `<#${discord.alertChannelId}>` : '— (not set)'}`,
+        `Audit channel: ${discord.auditChannelId ? `<#${discord.auditChannelId}>` : '— (not set)'}`,
         `Command scope: ${discord.guildId ? `guild ${discord.guildId}` : 'global'}`,
       ].join('\n'),
       inline: false,
@@ -92,6 +95,7 @@ async function handleShow(interaction: ChatInputCommandInteraction): Promise<voi
         `Checks: ${describeChecks()}`,
         `Thresholds: CPU ${monitor.thresholds.cpuPercent}% · MEM ${monitor.thresholds.memoryPercent}% · DISK ${monitor.thresholds.diskPercent}%`,
         `TLS warn at ${monitor.thresholds.certExpiryDays}d · slow at ${monitor.thresholds.responseMs || '—'} ms`,
+        `History: ${monitor.historyHours}h retained · ${describeHistory()}`,
       ].join('\n'),
       inline: false,
     },
@@ -136,6 +140,14 @@ async function handleReload(
 
   const result = reloadConfig();
   log.info({ user: interaction.user.tag, counts: result.counts }, 'configuration reloaded');
+  recordAudit(context.client, {
+    actor: interaction.user.tag,
+    action: 'config.reload',
+    target: result.configPath,
+    detail:
+      `${result.counts.services} services · ${result.counts.websites} sites · ` +
+      `${result.counts.commands} commands · ${result.counts.files} files`,
+  });
 
   // The monitor caches nothing but its interval, so restart it only when the
   // schedule itself changed.
@@ -225,4 +237,11 @@ function summarize(names: string[]): string {
   return names.length > 8
     ? `${names.length} (${shown}, +${names.length - 8} more)`
     : `${names.length} (${shown})`;
+}
+
+/** How much history has actually accumulated, for trust in /status trends. */
+function describeHistory(): string {
+  const { resources, sites } = metricsHistory.size;
+  if (resources === 0 && sites === 0) return 'no samples yet';
+  return `${resources} host + ${sites} site samples`;
 }

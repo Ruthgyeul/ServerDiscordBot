@@ -16,9 +16,9 @@
       "certExpiryDays": 14,
       "responseMs": 3000
     },
-    "ignoreMounts": ["/boot", "/boot/efi", "/snap"]
+    "ignoreMounts": ["/boot", "/boot/efi", "/snap"],
+    "historyHours": 24
   },
-
   "services": [
     {
       "name": "nginx",
@@ -41,7 +41,6 @@
       "description": "status.ruthgyeul.xyz"
     }
   ],
-
   "websites": [
     {
       "name": "portfolio",
@@ -62,7 +61,6 @@
       "service": "status"
     }
   ],
-
   "commands": [
     {
       "name": "disk",
@@ -102,9 +100,17 @@
       "args": ["certificates"],
       "sudo": true,
       "timeoutMs": 30000
+    },
+    {
+      "name": "nginx-reload",
+      "label": "Reload nginx",
+      "description": "Apply a new nginx config without dropping connections",
+      "command": "systemctl",
+      "args": ["reload", "nginx.service"],
+      "sudo": true,
+      "confirm": true
     }
   ],
-
   "files": [
     {
       "name": "nginx-error",

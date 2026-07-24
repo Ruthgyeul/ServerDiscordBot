@@ -15,7 +15,7 @@ import type { AlertScheduler } from './services/alertScheduler.js';
  *
  * Everything the bot knows about the server it manages lives in these shapes.
  * Secrets and identity come from `.env`; the inventory (what to watch, what
- * may be run) comes from `config/config.json`. Adding a new website, service,
+ * may be run) comes from `config.json`. Adding a new website, service,
  * command or file is a config edit — never a code change.
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -66,6 +66,8 @@ export interface RunCommandConfig extends NamedEntry {
   timeoutMs: number;
   /** Run through `sudo -n` (needs a matching sudoers rule). */
   sudo: boolean;
+  /** Require an explicit button confirmation before running. */
+  confirm: boolean;
 }
 
 /** An allowlisted file exposed through `/file`. */
@@ -103,6 +105,8 @@ export interface MonitorConfig {
   thresholds: MonitorThresholds;
   /** Mount points to exclude from disk reporting and alerting. */
   ignoreMounts: string[];
+  /** How many hours of samples to keep in memory for trends and uptime. */
+  historyHours: number;
 }
 
 /** How the bot talks to the host it manages. */
@@ -132,6 +136,8 @@ export interface DiscordConfig {
   clientId: string;
   guildId: string;
   alertChannelId: string;
+  /** Optional channel receiving an audit trail of every privileged action. */
+  auditChannelId: string;
 }
 
 export interface AccessConfig {

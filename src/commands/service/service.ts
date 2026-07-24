@@ -6,7 +6,7 @@ import {
   type SlashCommandStringOption,
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
-import { config } from '../../config/index.js';
+import { config, findService } from '../../config/index.js';
 import {
   controlService,
   getStatus,
@@ -16,9 +16,11 @@ import {
 } from '../../services/serviceManager.js';
 import { infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
+import { confirmAction } from '../../lib/confirm.js';
+import { recordAudit } from '../../services/audit.js';
 import { truncate } from '../../lib/format.js';
 import { childLogger } from '../../logger.js';
-import type { CommandModule } from '../../types.js';
+import type { BotContext, CommandModule } from '../../types.js';
 
 const log = childLogger('command:service');
 
@@ -90,7 +92,7 @@ const command: CommandModule = {
         ),
     ),
 
-  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+  async execute(interaction: ChatInputCommandInteraction, context: BotContext): Promise<void> {
     const sub = interaction.options.getSubcommand();
 
     switch (sub) {
@@ -101,7 +103,7 @@ const command: CommandModule = {
       case 'logs':
         return handleLogs(interaction);
       default:
-        return handleControl(interaction, sub);
+        return handleControl(interaction, sub, context);
     }
   },
 
@@ -117,7 +119,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
 
   if (config.services.length === 0) {
     await interaction.editReply({
-      embeds: [infoEmbed('No managed services', 'Add services in `config/config.json`.')],
+      embeds: [infoEmbed('No managed services', 'Add services in `config.json`.')],
     });
     return;
   }
@@ -170,14 +172,18 @@ async function handleLogs(interaction: ChatInputCommandInteraction): Promise<voi
 }
 
 /**
- * Handle start/stop/restart. Deferred because a slow service can take several
- * seconds to change state.
+ * Handle start/stop/restart.
+ *
+ * Taking a service marked `critical` down asks for confirmation first: one
+ * mistyped autocomplete entry on `nginx` is the difference between restarting
+ * one app and taking every hosted site offline. Starting a service is never
+ * gated — it only ever moves things towards working.
  */
 async function handleControl(
   interaction: ChatInputCommandInteraction,
   action: string,
+  context: BotContext,
 ): Promise<void> {
-  await interaction.deferReply();
   const name = interaction.options.getString('name', true);
 
   const mutating: ServiceAction[] = [
@@ -188,11 +194,35 @@ async function handleControl(
   const resolved = mutating.find((a) => a === action);
   if (!resolved) throw new Error(`Unsupported action "${action}".`);
 
+  const service = findService(name);
+  if (!service) throw new Error(`Unknown service "${name}". Not in the managed allowlist.`);
+
+  const needsConfirmation = service.critical && resolved !== ServiceAction.START;
+  if (needsConfirmation) {
+    const confirmed = await confirmAction(interaction, {
+      title: `${capitalize(resolved)} a critical service?`,
+      description: `**${service.label}** (\`${service.unit}\`) is marked critical.${
+        service.description ? `\n${service.description}` : ''
+      }`,
+      confirmLabel: `${capitalize(resolved)} ${service.name}`,
+    });
+    if (!confirmed) return;
+  } else {
+    // Deferred because a slow service can take several seconds to change state.
+    await interaction.deferReply();
+  }
+
   const result = await controlService(name, resolved);
   log.info(
     { user: interaction.user.tag, service: name, action: resolved },
     'service action performed via Discord',
   );
+  recordAudit(context.client, {
+    actor: interaction.user.tag,
+    action: `service.${resolved}`,
+    target: service.unit,
+    detail: service.critical ? '**Critical service.**' : undefined,
+  });
 
   // Re-read status so the confirmation reflects reality, not just the exit code.
   const status = await getStatus(name);
@@ -212,4 +242,8 @@ async function handleControl(
       ),
     ],
   });
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }

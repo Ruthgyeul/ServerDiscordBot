@@ -12,6 +12,8 @@ const eventsDir = resolve(__dirname, '../events');
 /** Accept .ts (dev via tsx) and .js (compiled), but not declaration files. */
 function isModuleFile(name: string): boolean {
   if (name.endsWith('.d.ts')) return false;
+  // Never auto-register a test file that happens to sit next to a module.
+  if (name.includes('.test.')) return false;
   return name.endsWith('.ts') || name.endsWith('.js');
 }
 

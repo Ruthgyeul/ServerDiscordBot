@@ -1,6 +1,7 @@
 import { ActivityType, Events, type Client, type PresenceStatusData } from 'discord.js';
 import { childLogger } from '../logger.js';
 import { config } from '../config/index.js';
+import { infoEmbed } from '../lib/embeds.js';
 import type { BotContext, EventModule } from '../types.js';
 
 const log = childLogger('event:ready');
@@ -53,6 +54,21 @@ const event: EventModule = {
     });
 
     context.alertScheduler.start();
+
+    // A restart is the most common cause of "why did the bot stop answering?".
+    // Announcing it turns that into a visible, timestamped event instead of a
+    // gap someone has to notice and investigate.
+    context.alertScheduler.sendDirect(
+      infoEmbed(
+        `${config.bot.name} is online`,
+        [
+          `Commands: ${context.commands.size}`,
+          `Monitoring: ${config.monitor.enabled ? `every ${config.monitor.intervalSeconds}s` : 'disabled'}`,
+          `Inventory: ${config.services.length} services · ${config.websites.length} sites · ` +
+            `${config.commands.length} commands · ${config.files.length} files`,
+        ].join('\n'),
+      ),
+    );
   },
 };
 

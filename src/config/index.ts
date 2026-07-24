@@ -25,7 +25,7 @@ import type {
  * The single place the bot learns anything about itself or the host.
  *
  *   `.env`             → identity, secrets, access control, host access mode
- *   `config/config.json` → inventory: services, websites, commands, files,
+ *   `config.json` → inventory: services, websites, commands, files,
  *                          monitoring thresholds
  *
  * Both sources are re-readable at runtime via `reloadConfig()` (exposed as
@@ -59,11 +59,11 @@ function resolveConfigPath(): string {
   const override = process.env.CONFIG_PATH?.trim();
   if (override) return resolve(projectRoot, override);
 
-  const primary = resolve(projectRoot, 'config/config.json');
+  const primary = resolve(projectRoot, 'config.json');
   if (existsSync(primary)) return primary;
 
   // A fresh checkout should still boot; the example doubles as a live default.
-  return resolve(projectRoot, 'config/config.example.json');
+  return resolve(projectRoot, 'config.example.json');
 }
 
 /** Read and parse the inventory file, degrading to an empty inventory on error. */
@@ -115,6 +115,7 @@ function buildConfig(issues: ConfigIssue[]): AppConfig {
       clientId: env.string('DISCORD_CLIENT_ID'),
       guildId: env.string('DISCORD_GUILD_ID'),
       alertChannelId: env.string('ALERT_CHANNEL_ID'),
+      auditChannelId: env.string('AUDIT_CHANNEL_ID'),
     },
     access: {
       adminUserIds: env.list('ADMIN_USER_IDS'),

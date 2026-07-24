@@ -30,6 +30,8 @@ function collectFiles(dir: string): string[] {
  */
 function isModuleFile(name: string): boolean {
   if (name.endsWith('.d.ts')) return false;
+  // Never auto-register a test file that happens to sit next to a module.
+  if (name.includes('.test.')) return false;
   return name.endsWith('.ts') || name.endsWith('.js');
 }
 

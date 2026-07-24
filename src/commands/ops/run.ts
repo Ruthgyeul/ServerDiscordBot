@@ -5,12 +5,14 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
-import { config } from '../../config/index.js';
+import { config, findCommand } from '../../config/index.js';
 import { parseExtraArgs, runCommand } from '../../services/commandRunner.js';
 import { infoEmbed, successEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
+import { confirmAction } from '../../lib/confirm.js';
+import { recordAudit } from '../../services/audit.js';
 import { truncate } from '../../lib/format.js';
-import type { CommandModule } from '../../types.js';
+import type { BotContext, CommandModule } from '../../types.js';
 
 /**
  * `/run` — execute one of the commands allowlisted in `config.commands`.
@@ -46,11 +48,11 @@ const command: CommandModule = {
         ),
     ),
 
-  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+  async execute(interaction: ChatInputCommandInteraction, context: BotContext): Promise<void> {
     if (interaction.options.getSubcommand() === 'list') {
       return handleList(interaction);
     }
-    return handleExec(interaction);
+    return handleExec(interaction, context);
   },
 
   async autocomplete(interaction: AutocompleteInteraction): Promise<void> {
@@ -66,7 +68,7 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
       embeds: [
         infoEmbed(
           'No commands allowlisted',
-          'Add entries under `"commands"` in `config/config.json`, then run `/config reload`.',
+          'Add entries under `"commands"` in `config.json`, then run `/config reload`.',
         ),
       ],
       flags: MessageFlags.Ephemeral,
@@ -76,9 +78,11 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
 
   const lines = config.commands.map((entry) => {
     const argv = [entry.command, ...entry.args].join(' ');
-    const flags = [entry.sudo ? 'sudo' : null, entry.allowArgs ? 'accepts args' : null].filter(
-      Boolean,
-    );
+    const flags = [
+      entry.sudo ? 'sudo' : null,
+      entry.allowArgs ? 'accepts args' : null,
+      entry.confirm ? 'asks first' : null,
+    ].filter(Boolean);
     const suffix = flags.length > 0 ? ` · _${flags.join(', ')}_` : '';
     return `**${entry.label}** (\`${entry.name}\`)${suffix}\n\`${argv}\`${entry.description ? `\n${entry.description}` : ''}`;
   });
@@ -91,14 +95,36 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
   });
 }
 
-async function handleExec(interaction: ChatInputCommandInteraction): Promise<void> {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
+async function handleExec(
+  interaction: ChatInputCommandInteraction,
+  context: BotContext,
+): Promise<void> {
   const name = interaction.options.getString('name', true);
   const rawArgs = interaction.options.getString('args');
   const extra = rawArgs ? parseExtraArgs(rawArgs) : [];
 
+  // Entries that change something opt into a confirmation step with
+  // "confirm": true, so a reload or a deploy cannot be fired by a stray Enter.
+  const entry = findCommand(name);
+  if (entry?.confirm) {
+    const preview = [entry.command, ...entry.args, ...extra].join(' ');
+    const confirmed = await confirmAction(interaction, {
+      title: `Run ${entry.label}?`,
+      description: `\`${preview}\`${entry.description ? `\n${entry.description}` : ''}`,
+      confirmLabel: `Run ${entry.name}`,
+    });
+    if (!confirmed) return;
+  } else {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+
   const outcome = await runCommand(name, extra, interaction.user.tag);
+  recordAudit(context.client, {
+    actor: interaction.user.tag,
+    action: 'run.exec',
+    target: outcome.entry.name,
+    detail: `\`${outcome.argv.join(' ')}\``,
+  });
   const body = [outcome.stdout, outcome.stderr].filter(Boolean).join('\n') || '(no output)';
 
   await interaction.editReply({

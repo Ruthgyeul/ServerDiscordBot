@@ -8,6 +8,7 @@ import { config } from '../../config/index.js';
 import { infoEmbed, successEmbed, warningEmbed } from '../../lib/embeds.js';
 import { formatDuration } from '../../lib/format.js';
 import { childLogger } from '../../logger.js';
+import { recordAudit } from '../../services/audit.js';
 import type { BotContext, CommandModule } from '../../types.js';
 
 const log = childLogger('command:alerts');
@@ -105,6 +106,11 @@ const command: CommandModule = {
         const minutes = interaction.options.getInteger('minutes', true);
         const until = scheduler.mute(minutes);
         log.info({ user: interaction.user.tag, minutes }, 'alerts muted');
+        recordAudit(context.client, {
+          actor: interaction.user.tag,
+          action: 'alerts.mute',
+          target: `${minutes} minutes`,
+        });
         await interaction.reply({
           embeds: [
             successEmbed(
@@ -120,6 +126,11 @@ const command: CommandModule = {
 
       case 'unmute': {
         scheduler.unmute();
+        recordAudit(context.client, {
+          actor: interaction.user.tag,
+          action: 'alerts.unmute',
+          target: 'monitor',
+        });
         await interaction.reply({
           embeds: [successEmbed('Alerts resumed', 'The monitor will post again.')],
           flags: MessageFlags.Ephemeral,

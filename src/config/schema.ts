@@ -9,7 +9,7 @@ import type {
 } from '../types.js';
 
 /**
- * Validation and normalization for `config/config.json`.
+ * Validation and normalization for `config.json`.
  *
  * Design rules, in priority order:
  *
@@ -38,9 +38,10 @@ export const DEFAULTS = {
       responseMs: 0,
     },
     ignoreMounts: [] as string[],
+    historyHours: 24,
   },
   website: { expectStatus: 200, timeoutMs: 8000, checkCert: true },
-  command: { timeoutMs: 15000, allowArgs: false, sudo: false },
+  command: { timeoutMs: 15000, allowArgs: false, sudo: false, confirm: false },
   file: { maxLines: 200 },
 } as const;
 
@@ -296,6 +297,7 @@ export function normalizeCommands(raw: unknown, issues: ConfigIssue[]): RunComma
       args: readStringArray(source, 'args', ctx),
       allowArgs: readBoolean(source, 'allowArgs', DEFAULTS.command.allowArgs, ctx),
       sudo: readBoolean(source, 'sudo', DEFAULTS.command.sudo, ctx),
+      confirm: readBoolean(source, 'confirm', DEFAULTS.command.confirm, ctx),
       timeoutMs: readNumber(source, 'timeoutMs', DEFAULTS.command.timeoutMs, ctx, {
         min: 1000,
         max: 120000,
@@ -393,6 +395,10 @@ export function normalizeMonitor(raw: unknown, issues: ConfigIssue[]): MonitorCo
       }),
     },
     ignoreMounts: readStringArray(source, 'ignoreMounts', ctx),
+    historyHours: readNumber(source, 'historyHours', d.historyHours, ctx, {
+      min: 1,
+      max: 168,
+    }),
   };
 }
 

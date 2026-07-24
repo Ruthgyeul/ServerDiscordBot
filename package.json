@@ -11,6 +11,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\"",
     "deploy": "node dist/deploy-commands.js",
     "deploy:dev": "tsx src/deploy-commands.ts",
     "typecheck": "tsc --noEmit",
