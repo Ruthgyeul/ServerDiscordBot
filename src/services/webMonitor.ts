@@ -51,6 +51,26 @@ export async function checkSite(site: WebsiteConfig, withCert = true): Promise<W
 
 type HttpResult = Pick<WebResult, 'site' | 'up' | 'status' | 'responseMs' | 'error'>;
 
+/**
+ * Build the health-check User-Agent from the configured bot name.
+ *
+ * HTTP header values are ByteStrings — every character must fit in one byte.
+ * `BOT_NAME` is free text and has no reason to be Latin-1: "귀찮은 초이" or a
+ * name with an emoji is a perfectly reasonable thing to call your bot. Passing
+ * one through unchanged makes `fetch` throw before the request is even sent,
+ * which would mark every website down for a reason that has nothing to do with
+ * the websites. So reduce the name to a safe token, and fall back to a
+ * constant when nothing usable is left.
+ */
+export function healthCheckUserAgent(botName: string): string {
+  const ascii = botName
+    .replace(/[^\x20-\x7E]/g, '') // printable ASCII only
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return `${ascii || 'ServerDiscordBot'}/1.0 health-check`;
+}
+
 async function checkHttp(site: WebsiteConfig): Promise<HttpResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), site.timeoutMs);
@@ -61,7 +81,7 @@ async function checkHttp(site: WebsiteConfig): Promise<HttpResult> {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
-      headers: { 'User-Agent': `${config.bot.name}/1.0 health-check` },
+      headers: { 'User-Agent': healthCheckUserAgent(config.bot.name) },
     });
     const responseMs = Math.round(performance.now() - start);
     const up = res.status === site.expectStatus;

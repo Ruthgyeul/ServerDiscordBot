@@ -8,6 +8,7 @@ import { config, findWebsite } from '../../config/index.js';
 import { checkAllSites, checkSite, type WebResult } from '../../services/webMonitor.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { respondWithEntries } from '../../lib/autocomplete.js';
+import { metricsHistory } from '../../services/metricsHistory.js';
 import type { CommandModule, WebsiteConfig } from '../../types.js';
 
 /**
@@ -64,6 +65,16 @@ function describeSite(result: WebResult): string {
     : `${status} · ${result.error}`;
 
   const lines = [`${icon} **${result.site.label}** — ${detail}`, result.site.url];
+
+  // Uptime only exists once the monitor has been running a while; saying
+  // nothing is better than implying 100% from a single sample.
+  const availability = metricsHistory.getAvailability(result.site.name);
+  if (availability) {
+    lines.push(
+      `Uptime: ${availability.uptimePercent.toFixed(2)}% over ${availability.spanMinutes}m ` +
+        `· avg ${Math.round(availability.averageMs)} ms`,
+    );
+  }
 
   const cert = result.cert;
   if (cert) {

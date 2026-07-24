@@ -131,3 +131,84 @@ export async function getTopProcesses(
     )
     .slice(0, limit);
 }
+
+export interface InterfaceInfo {
+  name: string;
+  ip4: string;
+  ip6: string;
+  /** Bytes per second, averaged since the previous call. */
+  rxSec: number;
+  txSec: number;
+  /** Cumulative counters since boot. */
+  rxBytes: number;
+  txBytes: number;
+}
+
+export interface ListeningPort {
+  protocol: string;
+  address: string;
+  port: number;
+  process: string;
+  pid: number | null;
+}
+
+/**
+ * Network interfaces with their throughput.
+ *
+ * `networkStats` reports rates relative to the previous call in this process,
+ * so the first invocation after boot reports 0 — that is a limitation of the
+ * sampling, not an error worth hiding.
+ */
+export async function getNetworkInterfaces(): Promise<InterfaceInfo[]> {
+  const [interfaces, stats] = await Promise.all([
+    si.networkInterfaces(),
+    si.networkStats('*'),
+  ]);
+
+  const list = Array.isArray(interfaces) ? interfaces : [interfaces];
+  const byName = new Map(stats.map((stat) => [stat.iface, stat]));
+
+  return (
+    list
+      // Loopback tells an operator nothing about reachability.
+      .filter((iface) => !iface.internal && iface.ip4)
+      .map((iface) => {
+        const stat = byName.get(iface.iface);
+        return {
+          name: iface.iface,
+          ip4: iface.ip4,
+          ip6: iface.ip6,
+          rxSec: Math.max(0, stat?.rx_sec ?? 0),
+          txSec: Math.max(0, stat?.tx_sec ?? 0),
+          rxBytes: stat?.rx_bytes ?? 0,
+          txBytes: stat?.tx_bytes ?? 0,
+        };
+      })
+  );
+}
+
+/** Sockets in LISTEN state — "what is actually exposed on this box?". */
+export async function getListeningPorts(): Promise<ListeningPort[]> {
+  const connections = await si.networkConnections();
+
+  const listening = connections
+    .filter((conn) => conn.state === 'LISTEN')
+    .map((conn) => ({
+      protocol: conn.protocol,
+      address: conn.localAddress,
+      port: Number(conn.localPort),
+      process: conn.process || '—',
+      pid: conn.pid > 0 ? conn.pid : null,
+    }));
+
+  // The same port often appears once per bound address (0.0.0.0 and ::).
+  const seen = new Set<string>();
+  return listening
+    .filter((entry) => {
+      const key = `${entry.protocol}:${entry.port}:${entry.process}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.port - b.port);
+}

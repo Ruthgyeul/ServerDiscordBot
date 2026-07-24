@@ -115,6 +115,7 @@ function buildConfig(issues: ConfigIssue[]): AppConfig {
       clientId: env.string('DISCORD_CLIENT_ID'),
       guildId: env.string('DISCORD_GUILD_ID'),
       alertChannelId: env.string('ALERT_CHANNEL_ID'),
+      auditChannelId: env.string('AUDIT_CHANNEL_ID'),
     },
     access: {
       adminUserIds: env.list('ADMIN_USER_IDS'),

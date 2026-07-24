@@ -5,6 +5,7 @@ import { getSnapshot } from './systemMonitor.js';
 import { getAllStatuses } from './serviceManager.js';
 import { checkAllSites } from './webMonitor.js';
 import { warningEmbed, successEmbed } from '../lib/embeds.js';
+import { metricsHistory } from './metricsHistory.js';
 import { formatPercent } from '../lib/format.js';
 
 const log = childLogger('alertScheduler');
@@ -127,6 +128,7 @@ export class AlertScheduler {
 
   private async checkResources(): Promise<void> {
     const snap = await getSnapshot();
+    metricsHistory.recordResources(snap);
     const t = config.monitor.thresholds;
 
     this.evaluate(
@@ -175,6 +177,8 @@ export class AlertScheduler {
     const results = await checkAllSites(checks.certificates);
 
     for (const result of results) {
+      metricsHistory.recordSite(result);
+
       if (checks.websites) {
         this.evaluate(
           `website:${result.site.name}`,

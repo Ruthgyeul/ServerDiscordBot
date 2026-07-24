@@ -3,6 +3,7 @@ import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
 import { getSnapshot, getHostInfo } from '../../services/systemMonitor.js';
 import { formatBytes, formatDuration, progressBar } from '../../lib/format.js';
+import { metricsHistory, formatTrend } from '../../services/metricsHistory.js';
 import type { CommandModule } from '../../types.js';
 
 /**
@@ -26,12 +27,16 @@ const command: CommandModule = {
       .addFields(
         {
           name: 'CPU',
-          value: `${progressBar(snap.cpuPercent)}\nLoad avg (1m): ${snap.loadAvg1.toFixed(2)}${cores}`,
+          value:
+            `${progressBar(snap.cpuPercent)}${formatTrend(metricsHistory.getResourceTrend('cpuPercent'))}\n` +
+            `Load avg (1m): ${snap.loadAvg1.toFixed(2)}${cores}`,
           inline: false,
         },
         {
           name: 'Memory',
-          value: `${progressBar(snap.memPercent)}\n${formatBytes(snap.memUsed)} / ${formatBytes(snap.memTotal)}`,
+          value:
+            `${progressBar(snap.memPercent)}${formatTrend(metricsHistory.getResourceTrend('memPercent'))}\n` +
+            `${formatBytes(snap.memUsed)} / ${formatBytes(snap.memTotal)}`,
           inline: false,
         },
         {

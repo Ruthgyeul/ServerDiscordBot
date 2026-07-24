@@ -66,6 +66,8 @@ export interface RunCommandConfig extends NamedEntry {
   timeoutMs: number;
   /** Run through `sudo -n` (needs a matching sudoers rule). */
   sudo: boolean;
+  /** Require an explicit button confirmation before running. */
+  confirm: boolean;
 }
 
 /** An allowlisted file exposed through `/file`. */
@@ -103,6 +105,8 @@ export interface MonitorConfig {
   thresholds: MonitorThresholds;
   /** Mount points to exclude from disk reporting and alerting. */
   ignoreMounts: string[];
+  /** How many hours of samples to keep in memory for trends and uptime. */
+  historyHours: number;
 }
 
 /** How the bot talks to the host it manages. */
@@ -132,6 +136,8 @@ export interface DiscordConfig {
   clientId: string;
   guildId: string;
   alertChannelId: string;
+  /** Optional channel receiving an audit trail of every privileged action. */
+  auditChannelId: string;
 }
 
 export interface AccessConfig {
