@@ -1,5 +1,5 @@
 import type { Client, EmbedBuilder, SendableChannels } from 'discord.js';
-import { config } from '../config.js';
+import { config } from '../config/index.js';
 import { childLogger } from '../logger.js';
 import { getSnapshot } from './systemMonitor.js';
 import { getAllStatuses } from './serviceManager.js';
@@ -9,25 +9,41 @@ import { formatPercent } from '../lib/format.js';
 
 const log = childLogger('alertScheduler');
 
+/** One condition currently considered unhealthy. */
+export interface ActiveAlert {
+  key: string;
+  title: string;
+  detail: string;
+  /** When the condition first went bad. */
+  since: number;
+  /** When we last posted about it. */
+  lastNotified: number;
+}
+
 /**
  * Periodic health monitor. On each tick it evaluates host resources, managed
- * services and websites, then posts alerts to the configured alert channel.
+ * services, websites and TLS certificates, then posts alerts to the configured
+ * alert channel.
  *
  * De-duplication: each distinct problem has a stable key. We only alert when a
  * key transitions from healthy -> unhealthy, and we send a recovery notice on
  * the reverse transition. A cooldown prevents re-alerting on a still-broken
  * condition too frequently. This keeps the channel signal-rich, not spammy.
+ *
+ * Every knob it reads — the interval, the thresholds, which passes run at all —
+ * is read from `config` per tick, so a `/config reload` retunes the monitor
+ * live. Only a changed *interval* needs the loop restarted, which `restart()`
+ * handles.
  */
 export class AlertScheduler {
   private readonly client: Client;
-  /** key -> last alert timestamp (ms) */
-  private readonly activeAlerts = new Map<string, number>();
+  private readonly activeAlerts = new Map<string, ActiveAlert>();
   private timer: NodeJS.Timeout | null = null;
-  private readonly cooldownMs: number;
+  /** Epoch ms until which alerts are suppressed; null when not muted. */
+  private mutedUntil: number | null = null;
 
   constructor(client: Client) {
     this.client = client;
-    this.cooldownMs = config.monitor.alertCooldownMinutes * 60 * 1000;
   }
 
   /** Start the recurring monitor loop (no-op if disabled in config). */
@@ -58,10 +74,56 @@ export class AlertScheduler {
     this.timer = null;
   }
 
-  /** Run one full evaluation pass. */
-  async tick(): Promise<void> {
-    await Promise.all([this.checkResources(), this.checkServices(), this.checkWebsites()]);
+  /** Re-read the interval and enabled flag from config; used after a reload. */
+  restart(): void {
+    this.stop();
+    this.start();
   }
+
+  get running(): boolean {
+    return this.timer !== null;
+  }
+
+  /** Run one full evaluation pass, honouring the per-check toggles. */
+  async tick(): Promise<void> {
+    const { checks } = config.monitor;
+    await Promise.all([
+      checks.resources ? this.checkResources() : Promise.resolve(),
+      checks.services ? this.checkServices() : Promise.resolve(),
+      checks.websites || checks.certificates ? this.checkWebsites() : Promise.resolve(),
+    ]);
+  }
+
+  /* ── Alert state, inspectable from /alerts ─────────────────────────────── */
+
+  /** Every condition currently unhealthy, newest problem first. */
+  getActiveAlerts(): ActiveAlert[] {
+    return [...this.activeAlerts.values()].sort((a, b) => b.since - a.since);
+  }
+
+  /** Suppress outgoing alerts for a while (maintenance windows, noisy deploys). */
+  mute(minutes: number): Date {
+    this.mutedUntil = Date.now() + minutes * 60 * 1000;
+    log.info({ minutes }, 'alerts muted');
+    return new Date(this.mutedUntil);
+  }
+
+  unmute(): void {
+    this.mutedUntil = null;
+    log.info('alerts unmuted');
+  }
+
+  /** When muted, the moment alerts resume; null otherwise. */
+  get muteExpiry(): Date | null {
+    if (this.mutedUntil === null) return null;
+    if (Date.now() >= this.mutedUntil) {
+      this.mutedUntil = null;
+      return null;
+    }
+    return new Date(this.mutedUntil);
+  }
+
+  /* ── Individual checks ─────────────────────────────────────────────────── */
 
   private async checkResources(): Promise<void> {
     const snap = await getSnapshot();
@@ -94,29 +156,72 @@ export class AlertScheduler {
   private async checkServices(): Promise<void> {
     const statuses = await getAllStatuses();
     for (const status of statuses) {
+      const mark = status.service.critical ? '❗ ' : '';
       this.evaluate(
         `service:${status.service.name}`,
         !status.running,
-        `Service down: ${status.service.label}`,
+        `${mark}Service down: ${status.service.label}`,
         `\`${status.service.unit}\` is **${status.activeState}** (${status.subState}).`,
       );
     }
   }
 
+  /**
+   * Websites and their certificates share one pass: both come from the same
+   * check, so doing them together halves the requests to each site.
+   */
   private async checkWebsites(): Promise<void> {
-    const results = await checkAllSites();
+    const { checks, thresholds } = config.monitor;
+    const results = await checkAllSites(checks.certificates);
+
     for (const result of results) {
-      this.evaluate(
-        `website:${result.site.name}`,
-        !result.up,
-        `Website down: ${result.site.label}`,
-        `${result.site.url}\n${result.error ?? 'Unreachable'}`,
-      );
+      if (checks.websites) {
+        this.evaluate(
+          `website:${result.site.name}`,
+          !result.up,
+          `Website down: ${result.site.label}`,
+          `${result.site.url}\n${result.error ?? 'Unreachable'}`,
+        );
+
+        this.evaluate(
+          `website-slow:${result.site.name}`,
+          result.slow,
+          `Website slow: ${result.site.label}`,
+          `Responded in ${result.responseMs} ms (threshold ${thresholds.responseMs} ms).`,
+        );
+      }
+
+      if (checks.certificates && result.site.checkCert) {
+        this.evaluateCertificate(result.site.name, result.site.label, result);
+      }
     }
+  }
+
+  private evaluateCertificate(
+    name: string,
+    label: string,
+    result: { cert: { daysRemaining: number; validTo: Date; issuer: string } | null },
+  ): void {
+    const cert = result.cert;
+    // No cert data means the site itself is unreachable — already alerted on.
+    if (!cert) return;
+
+    const limit = config.monitor.thresholds.certExpiryDays;
+    const expired = cert.daysRemaining < 0;
+    this.evaluate(
+      `cert:${name}`,
+      cert.daysRemaining <= limit,
+      expired
+        ? `TLS certificate EXPIRED: ${label}`
+        : `TLS certificate expiring soon: ${label}`,
+      `Expires ${cert.validTo.toISOString().slice(0, 10)} ` +
+        `(${cert.daysRemaining} days, threshold ${limit}) · issued by ${cert.issuer}.`,
+    );
   }
 
   /**
    * Core state-machine for a single monitored condition.
+   *
    * @param key    Stable identifier for this condition.
    * @param isBad  Whether the condition is currently unhealthy.
    * @param title  Alert title.
@@ -124,16 +229,23 @@ export class AlertScheduler {
    */
   private evaluate(key: string, isBad: boolean, title: string, detail: string): void {
     const now = Date.now();
-    const lastAlert = this.activeAlerts.get(key);
+    const existing = this.activeAlerts.get(key);
+    const cooldownMs = config.monitor.alertCooldownMinutes * 60 * 1000;
 
     if (isBad) {
-      const isNew = lastAlert === undefined;
-      const cooledDown = lastAlert !== undefined && now - lastAlert >= this.cooldownMs;
-      if (isNew || cooledDown) {
-        this.activeAlerts.set(key, now);
+      if (!existing) {
+        this.activeAlerts.set(key, { key, title, detail, since: now, lastNotified: now });
+        this.send(warningEmbed(title, detail));
+        return;
+      }
+
+      // Still bad: refresh the detail, but only re-post once cooled down.
+      existing.detail = detail;
+      if (now - existing.lastNotified >= cooldownMs) {
+        existing.lastNotified = now;
         this.send(warningEmbed(title, detail));
       }
-    } else if (lastAlert !== undefined) {
+    } else if (existing) {
       // Transitioned back to healthy — clear state and announce recovery.
       this.activeAlerts.delete(key);
       this.send(successEmbed(`Recovered: ${title}`, detail));
@@ -142,6 +254,8 @@ export class AlertScheduler {
 
   /** Post an embed to the alert channel, tolerating a missing/invalid channel. */
   private send(embed: EmbedBuilder): void {
+    if (this.muteExpiry) return;
+
     const channelId = config.discord.alertChannelId;
     if (!channelId) return;
 
@@ -153,6 +267,14 @@ export class AlertScheduler {
     (channel as SendableChannels).send({ embeds: [embed] }).catch((err: unknown) => {
       log.error({ err: errorMessage(err) }, 'failed to send alert');
     });
+  }
+
+  /** Send an arbitrary embed to the alert channel, bypassing the mute. */
+  sendDirect(embed: EmbedBuilder): void {
+    const previousMute = this.mutedUntil;
+    this.mutedUntil = null;
+    this.send(embed);
+    this.mutedUntil = previousMute;
   }
 }
 

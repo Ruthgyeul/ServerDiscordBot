@@ -1,5 +1,5 @@
 import pino, { type Logger } from 'pino';
-import { config } from './config.js';
+import { config } from './config/index.js';
 
 /**
  * Application logger.

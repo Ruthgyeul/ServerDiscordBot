@@ -1,11 +1,12 @@
 import {
   SlashCommandBuilder,
   MessageFlags,
+  type AutocompleteInteraction,
   type ChatInputCommandInteraction,
   type SlashCommandStringOption,
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
-import { config } from '../../config.js';
+import { config } from '../../config/index.js';
 import {
   controlService,
   getStatus,
@@ -14,6 +15,7 @@ import {
   ServiceAction,
 } from '../../services/serviceManager.js';
 import { infoEmbed, successEmbed } from '../../lib/embeds.js';
+import { respondWithEntries } from '../../lib/autocomplete.js';
 import { truncate } from '../../lib/format.js';
 import { childLogger } from '../../logger.js';
 import type { CommandModule } from '../../types.js';
@@ -21,18 +23,18 @@ import type { CommandModule } from '../../types.js';
 const log = childLogger('command:service');
 
 /**
- * Build the choices array from managed services so users get dropdowns and can
- * never target a unit outside the allowlist.
+ * Reusable "name" option for the subcommands that target a single unit.
+ *
+ * Values are served by autocomplete rather than baked in as static choices, so
+ * a service added to `config.json` becomes selectable right after a `/config
+ * reload` — no re-registration with Discord, no restart.
  */
-function serviceChoices(): { name: string; value: string }[] {
-  return config.services.slice(0, 25).map((s) => ({ name: s.label, value: s.name }));
-}
-
-/** Reusable "name" option builder for the mutating/inspecting subcommands. */
 function nameOption(option: SlashCommandStringOption): SlashCommandStringOption {
-  option.setName('name').setDescription('The managed service to target.').setRequired(true);
-  for (const choice of serviceChoices()) option.addChoices(choice);
-  return option;
+  return option
+    .setName('name')
+    .setDescription('The managed service to target.')
+    .setRequired(true)
+    .setAutocomplete(true);
 }
 
 /**
@@ -75,6 +77,16 @@ const command: CommandModule = {
             .setDescription('Number of log lines (1–100, default 30).')
             .setMinValue(1)
             .setMaxValue(100),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('priority')
+            .setDescription('Only show messages at this priority or worse.')
+            .addChoices(
+              { name: 'Errors and worse', value: 'err' },
+              { name: 'Warnings and worse', value: 'warning' },
+              { name: 'Everything', value: 'debug' },
+            ),
         ),
     ),
 
@@ -91,6 +103,10 @@ const command: CommandModule = {
       default:
         return handleControl(interaction, sub);
     }
+  },
+
+  async autocomplete(interaction: AutocompleteInteraction): Promise<void> {
+    await respondWithEntries(interaction, config.services);
   },
 };
 
@@ -109,11 +125,13 @@ async function handleList(interaction: ChatInputCommandInteraction): Promise<voi
   const statuses = await getAllStatuses();
   const lines = statuses.map((s) => {
     const icon = s.running ? '🟢' : '🔴';
-    return `${icon} **${s.service.label}** \`${s.service.unit}\` — ${s.activeState}/${s.subState}`;
+    const critical = s.service.critical ? ' ❗' : '';
+    return `${icon} **${s.service.label}**${critical} \`${s.service.unit}\` — ${s.activeState}/${s.subState}`;
   });
 
+  const up = statuses.filter((s) => s.running).length;
   await interaction.editReply({
-    embeds: [infoEmbed('Managed services', lines.join('\n'))],
+    embeds: [infoEmbed(`Managed services — ${up}/${statuses.length} up`, lines.join('\n'))],
   });
 }
 
@@ -125,7 +143,7 @@ async function handleStatus(interaction: ChatInputCommandInteraction): Promise<v
 
   await interaction.editReply({
     embeds: [
-      infoEmbed(status.service.label).addFields(
+      infoEmbed(status.service.label, status.service.description).addFields(
         { name: 'Unit', value: `\`${status.service.unit}\``, inline: true },
         { name: 'State', value: icon, inline: true },
         {
@@ -143,7 +161,8 @@ async function handleLogs(interaction: ChatInputCommandInteraction): Promise<voi
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const name = interaction.options.getString('name', true);
   const lines = interaction.options.getInteger('lines') ?? 30;
-  const output = await getLogs(name, lines);
+  const priority = interaction.options.getString('priority') ?? undefined;
+  const output = await getLogs(name, lines, priority);
 
   await interaction.editReply({
     embeds: [infoEmbed(`Logs — ${name}`, `\`\`\`\n${truncate(output)}\n\`\`\``)],

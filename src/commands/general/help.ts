@@ -5,7 +5,7 @@ import {
 } from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
 import { infoEmbed } from '../../lib/embeds.js';
-import { config } from '../../config.js';
+import { config } from '../../config/index.js';
 import type { BotContext, CommandModule } from '../../types.js';
 
 /**

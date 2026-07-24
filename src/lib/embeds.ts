@@ -1,9 +1,14 @@
 import { EmbedBuilder } from 'discord.js';
-import { config } from '../config.js';
+import { config } from '../config/index.js';
 
-/** Shared color palette so every embed the bot sends looks consistent. */
+/**
+ * Shared color palette so every embed the bot sends looks consistent.
+ *
+ * Informational embeds follow `BOT_ACCENT_COLOR`, making the bot's look part
+ * of its `.env` identity. Status colors stay fixed, because their meaning
+ * (green = good, red = bad) should not be re-brandable.
+ */
 export const Colors = {
-  info: 0x5865f2, // Discord blurple
   success: 0x57f287, // green
   warning: 0xfee75c, // yellow
   danger: 0xed4245, // red
@@ -11,7 +16,7 @@ export const Colors = {
 } as const;
 
 export function infoEmbed(title: string, description?: string): EmbedBuilder {
-  return baseEmbed(Colors.info, title, description);
+  return baseEmbed(config.bot.accentColor, title, description);
 }
 
 export function successEmbed(title: string, description?: string): EmbedBuilder {

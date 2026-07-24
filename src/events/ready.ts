@@ -1,6 +1,6 @@
 import { ActivityType, Events, type Client, type PresenceStatusData } from 'discord.js';
 import { childLogger } from '../logger.js';
-import { config } from '../config.js';
+import { config } from '../config/index.js';
 import type { BotContext, EventModule } from '../types.js';
 
 const log = childLogger('event:ready');

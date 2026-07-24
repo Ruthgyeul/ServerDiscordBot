@@ -3,40 +3,121 @@
     "enabled": true,
     "intervalSeconds": 60,
     "alertCooldownMinutes": 15,
+    "checks": {
+      "resources": true,
+      "services": true,
+      "websites": true,
+      "certificates": true
+    },
     "thresholds": {
       "cpuPercent": 85,
       "memoryPercent": 90,
-      "diskPercent": 90
-    }
+      "diskPercent": 90,
+      "certExpiryDays": 14,
+      "responseMs": 3000
+    },
+    "ignoreMounts": ["/boot", "/boot/efi", "/snap"]
   },
+
   "services": [
     {
       "name": "nginx",
       "label": "Nginx",
       "unit": "nginx.service",
-      "description": "Reverse proxy / web server"
+      "description": "Reverse proxy in front of every site",
+      "critical": true
     },
     {
-      "name": "blog",
-      "label": "Blog site",
-      "unit": "blog.service",
-      "description": "Personal blog (Node app)"
+      "name": "portfolio",
+      "label": "Portfolio",
+      "unit": "portfolio.service",
+      "description": "ruthgyeul.xyz portfolio app",
+      "critical": true
+    },
+    {
+      "name": "status",
+      "label": "Status page",
+      "unit": "status.service",
+      "description": "status.ruthgyeul.xyz"
     }
   ],
+
   "websites": [
     {
-      "name": "main",
-      "label": "Main site",
-      "url": "https://example.com",
+      "name": "portfolio",
+      "label": "Portfolio",
+      "url": "https://ruthgyeul.xyz",
       "expectStatus": 200,
-      "timeoutMs": 8000
+      "timeoutMs": 8000,
+      "checkCert": true,
+      "service": "portfolio"
     },
     {
-      "name": "blog",
-      "label": "Blog",
-      "url": "https://blog.example.com",
+      "name": "status",
+      "label": "Status page",
+      "url": "https://status.ruthgyeul.xyz",
       "expectStatus": 200,
-      "timeoutMs": 8000
+      "timeoutMs": 8000,
+      "checkCert": true,
+      "service": "status"
+    }
+  ],
+
+  "commands": [
+    {
+      "name": "disk",
+      "label": "Disk usage",
+      "description": "Human-readable disk usage per filesystem",
+      "command": "df",
+      "args": ["-h"]
+    },
+    {
+      "name": "memory",
+      "label": "Memory usage",
+      "description": "Free / used memory and swap",
+      "command": "free",
+      "args": ["-h"]
+    },
+    {
+      "name": "nginx-test",
+      "label": "Test nginx config",
+      "description": "Validate the nginx configuration before a reload",
+      "command": "nginx",
+      "args": ["-t"],
+      "sudo": true
+    },
+    {
+      "name": "docker-ps",
+      "label": "Docker containers",
+      "description": "Running containers and their status",
+      "command": "docker",
+      "args": ["ps", "--format", "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"],
+      "timeoutMs": 20000
+    },
+    {
+      "name": "cert-expiry",
+      "label": "Certbot certificates",
+      "description": "Certificate inventory and renewal dates",
+      "command": "certbot",
+      "args": ["certificates"],
+      "sudo": true,
+      "timeoutMs": 30000
+    }
+  ],
+
+  "files": [
+    {
+      "name": "nginx-error",
+      "label": "Nginx error log",
+      "path": "/var/log/nginx/error.log",
+      "description": "Proxy-level failures (502/504 origins)",
+      "maxLines": 200
+    },
+    {
+      "name": "nginx-access",
+      "label": "Nginx access log",
+      "path": "/var/log/nginx/access.log",
+      "maxLines": 200
     }
   ]
 }

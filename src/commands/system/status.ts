@@ -20,12 +20,13 @@ const command: CommandModule = {
 
     const [snap, host] = await Promise.all([getSnapshot(), getHostInfo()]);
 
+    const cores = snap.cpuCores > 0 ? ` · ${snap.cpuCores} cores` : '';
     const embed = infoEmbed(`🖥️ ${host.hostname}`)
       .setDescription(`${host.distro} · kernel ${host.kernel}`)
       .addFields(
         {
           name: 'CPU',
-          value: `${progressBar(snap.cpuPercent)}\nLoad avg (1m): ${snap.loadAvg1.toFixed(2)}`,
+          value: `${progressBar(snap.cpuPercent)}\nLoad avg (1m): ${snap.loadAvg1.toFixed(2)}${cores}`,
           inline: false,
         },
         {
@@ -39,6 +40,15 @@ const command: CommandModule = {
           inline: true,
         },
       );
+
+    // Swap is only worth the space when the host actually has some.
+    if (snap.swapTotal > 0) {
+      embed.addFields({
+        name: 'Swap',
+        value: `${progressBar(snap.swapPercent)}\n${formatBytes(snap.swapUsed)} / ${formatBytes(snap.swapTotal)}`,
+        inline: false,
+      });
+    }
 
     for (const disk of snap.disks.slice(0, 6)) {
       embed.addFields({

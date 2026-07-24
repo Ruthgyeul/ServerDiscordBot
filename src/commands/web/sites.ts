@@ -1,8 +1,13 @@
-import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  type AutocompleteInteraction,
+  type ChatInputCommandInteraction,
+} from 'discord.js';
 import { Permission } from '../../lib/permissions.js';
-import { config, findWebsite } from '../../config.js';
-import { checkAllSites, checkSite } from '../../services/webMonitor.js';
+import { config, findWebsite } from '../../config/index.js';
+import { checkAllSites, checkSite, type WebResult } from '../../services/webMonitor.js';
 import { infoEmbed } from '../../lib/embeds.js';
+import { respondWithEntries } from '../../lib/autocomplete.js';
 import type { CommandModule, WebsiteConfig } from '../../types.js';
 
 /**
@@ -18,9 +23,7 @@ const command: CommandModule = {
       opt
         .setName('name')
         .setDescription('Check a single site (defaults to all).')
-        .addChoices(
-          ...config.websites.slice(0, 25).map((w) => ({ name: w.label, value: w.name })),
-        ),
+        .setAutocomplete(true),
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -36,24 +39,45 @@ const command: CommandModule = {
     const name = interaction.options.getString('name');
     const results = name ? [await checkSite(requireSite(name))] : await checkAllSites();
 
-    const lines = results.map((r) => {
-      const icon = r.up ? '🟢' : '🔴';
-      const status = r.status ? `HTTP ${r.status}` : 'no response';
-      const detail = r.up ? `${status} · ${r.responseMs} ms` : `${status} · ${r.error}`;
-      return `${icon} **${r.site.label}** — ${detail}\n${r.site.url}`;
-    });
-
     const allUp = results.every((r) => r.up);
     const embed = infoEmbed(
       allUp ? '🟢 All sites healthy' : '🔴 Some sites are down',
-      lines.join('\n\n'),
+      results.map(describeSite).join('\n\n'),
     );
 
     await interaction.editReply({ embeds: [embed] });
   },
+
+  async autocomplete(interaction: AutocompleteInteraction): Promise<void> {
+    await respondWithEntries(interaction, config.websites);
+  },
 };
 
 export default command;
+
+/** Render one site's result: reachability first, then latency and certificate. */
+function describeSite(result: WebResult): string {
+  const icon = result.up ? (result.slow ? '🟡' : '🟢') : '🔴';
+  const status = result.status ? `HTTP ${result.status}` : 'no response';
+  const detail = result.up
+    ? `${status} · ${result.responseMs} ms${result.slow ? ' (slow)' : ''}`
+    : `${status} · ${result.error}`;
+
+  const lines = [`${icon} **${result.site.label}** — ${detail}`, result.site.url];
+
+  const cert = result.cert;
+  if (cert) {
+    const warn = cert.daysRemaining <= config.monitor.thresholds.certExpiryDays ? '⚠️ ' : '';
+    const invalid = cert.authorized ? '' : ` · ⚠️ ${cert.authError ?? 'untrusted chain'}`;
+    lines.push(
+      `${warn}TLS: ${cert.daysRemaining}d left (${cert.validTo.toISOString().slice(0, 10)})${invalid}`,
+    );
+  } else if (result.certError && result.up) {
+    lines.push(`TLS: ${result.certError}`);
+  }
+
+  return lines.join('\n');
+}
 
 /** Resolve a site name to its config entry or throw a clear error. */
 function requireSite(name: string): WebsiteConfig {
